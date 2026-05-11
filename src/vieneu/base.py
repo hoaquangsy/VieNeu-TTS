@@ -272,12 +272,24 @@ class BaseVieneuTTS(ABC):
             import torch
             wav_tensor = torch.from_numpy(wav).float().unsqueeze(0).unsqueeze(0)  # [1, 1, T]
 
+            codec = self.codec
+            if not hasattr(codec, "encode_code"):
+                logger.info("Current codec is decoder-only; loading DistillNeuCodec for reference encoding on CPU.")
+                if not hasattr(self, "_reference_encoder_codec") or self._reference_encoder_codec is None:
+                    from neucodec import DistillNeuCodec
+
+                    self._reference_encoder_codec = DistillNeuCodec.from_pretrained(
+                        "neuphonic/distill-neucodec"
+                    )
+                    self._reference_encoder_codec.eval().to("cpu")
+                codec = self._reference_encoder_codec
+
             # Ensure device and dtype compatibility
-            if hasattr(self.codec, "device"):
-                wav_tensor = wav_tensor.to(self.codec.device)
+            if hasattr(codec, "device"):
+                wav_tensor = wav_tensor.to(codec.device)
 
             with torch.no_grad():
-                ref_codes = self.codec.encode_code(audio_or_path=wav_tensor).squeeze(0).squeeze(0)
+                ref_codes = codec.encode_code(audio_or_path=wav_tensor).squeeze(0).squeeze(0)
             return ref_codes
         except ImportError:
             raise ImportError("Torch is required for encode_reference in the current backend. Please install torch or use a backend that supports standalone encoding.")

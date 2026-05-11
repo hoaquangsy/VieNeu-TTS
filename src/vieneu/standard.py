@@ -208,7 +208,7 @@ class VieNeuTTS(BaseVieneuTTS):
             ref_phonemes = self.get_ref_phonemes(ref_text)
             phonemes = phonemize_with_dict(chunks[0], skip_normalize=True)
             if self._is_quantized_model:
-                output_str = self._infer_ggml(ref_codes, ref_phonemes, phonemes, temperature, top_k, emotion_tag=kwargs.get('emotion_tag', self.default_emotion))
+                output_str = self._infer_ggml(ref_codes, ref_phonemes, phonemes, temperature, top_k, emotion_tag=kwargs.get('emotion_tag', self.default_emotion), max_tokens=kwargs.get('max_tokens'))
             else:
                 prompt_ids = self._apply_chat_template(ref_codes, ref_phonemes, phonemes, emotion_tag=kwargs.get('emotion_tag', self.default_emotion))
                 output_str = self._infer_torch(prompt_ids, temperature, top_k)
@@ -245,7 +245,7 @@ class VieNeuTTS(BaseVieneuTTS):
         # If model is GGUF, we still process sequentially for now as llama-cpp-python batching for TTS is complex
         if self._is_quantized_model:
             for phonemes in chunk_phonemes:
-                output_str = self._infer_ggml(ref_codes, ref_phonemes, phonemes, temperature, top_k, emotion_tag=kwargs.get('emotion_tag', self.default_emotion))
+                output_str = self._infer_ggml(ref_codes, ref_phonemes, phonemes, temperature, top_k, emotion_tag=kwargs.get('emotion_tag', self.default_emotion), max_tokens=kwargs.get('max_tokens'))
                 wav = self._decode(output_str)
                 if apply_watermark:
                     wav = self._apply_watermark(wav)
@@ -362,7 +362,7 @@ class VieNeuTTS(BaseVieneuTTS):
         output_str = self.tokenizer.decode(output_tokens[0, input_length:].cpu().numpy().tolist(), add_special_tokens=False)
         return output_str
 
-    def _infer_ggml(self, ref_codes: Any, ref_phonemes: str, chunk_phonemes: str, temperature: float = 1.0, top_k: int = 50, emotion_tag: Optional[str] = None) -> str:
+    def _infer_ggml(self, ref_codes: Any, ref_phonemes: str, chunk_phonemes: str, temperature: float = 1.0, top_k: int = 50, emotion_tag: Optional[str] = None, max_tokens: Optional[int] = None) -> str:
         ref_codes_list = self.to_list(ref_codes)
         codes_str = "".join([f"<|speech_{idx}|>" for idx in ref_codes_list])
         emotion_prefix = emotion_tag if emotion_tag else ""
@@ -376,7 +376,18 @@ class VieNeuTTS(BaseVieneuTTS):
                 f"<|TEXT_PROMPT_START|>{emotion_prefix}{ref_phonemes} {chunk_phonemes}"
                 f"<|TEXT_PROMPT_END|><|SPEECH_GENERATION_START|>{codes_str}"
             )
-        output = self.backbone(prompt, max_tokens=self.max_context, temperature=temperature, top_k=top_k, stop=["<|SPEECH_GENERATION_END|>"])
+        if max_tokens is None:
+            # Each speech token is roughly 20ms. Bound short chunks so GGUF does not
+            # continue speaking far beyond the requested text when it misses the stop token.
+            max_tokens = min(768, max(160, int(len(chunk_phonemes) * 2.4)))
+        output = self.backbone(
+            prompt,
+            max_tokens=int(max_tokens),
+            temperature=temperature,
+            top_k=top_k,
+            repeat_penalty=1.18,
+            stop=["<|SPEECH_GENERATION_END|>"],
+        )
         return output["choices"][0]["text"]
 
     def _infer_stream_ggml(self, ref_codes: Any, ref_phonemes: str, chunk_phonemes: str, temperature: float = 1.0, top_k: int = 50, emotion_tag: Optional[str] = None) -> Generator[np.ndarray, None, None]:

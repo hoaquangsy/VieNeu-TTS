@@ -13,6 +13,12 @@ wheels/
 outputs/
 .env
 
+# Local app state and logs
+*.log
+model_selection_state.json
+user_voices.json
+user_pronunciation_rules.txt
+
 # Finetune Data & Checkpoints
 finetune/dataset/
 finetune/output/
