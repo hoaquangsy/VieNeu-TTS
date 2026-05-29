@@ -807,7 +807,7 @@ def get_effective_chunk_chars(max_chars_chunk: int, is_v2_turbo: bool) -> int:
 
     # GGUF CPU can emit an early end token on long prompts. Smaller chunks are
     # slower but make missing tail text much less likely.
-    return max(64, min(requested, 150))
+    return max(48, min(requested, 90))
 
 def estimate_min_audio_seconds_for_text(text: str) -> float:
     value = re.sub(r"\s+", " ", str(text or "").strip())
@@ -817,14 +817,14 @@ def estimate_min_audio_seconds_for_text(text: str) -> float:
     words = re.findall(r"\w+", value, flags=re.UNICODE)
     word_count = len(words)
     char_count = len(value)
-    return min(18.0, max(0.7, word_count * 0.12, char_count * 0.026))
+    return min(18.0, max(0.65, word_count * 0.2, char_count * 0.038))
 
 def is_probably_truncated_audio(wav, text: str, sr: int = 24000) -> bool:
     if wav is None or len(wav) == 0:
         return True
 
     value = re.sub(r"\s+", " ", str(text or "").strip())
-    if len(value) < 80:
+    if len(value) < 24:
         return False
 
     duration = float(len(wav)) / float(sr)
