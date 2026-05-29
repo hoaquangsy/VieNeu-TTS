@@ -811,6 +811,9 @@ def analyze_tts_text_length(text: str) -> dict:
         "sentences": max(1, sentence_count),
     }
 
+def count_text_words(text: str) -> int:
+    return len(re.findall(r"\w+", str(text or ""), flags=re.UNICODE))
+
 def get_effective_chunk_chars(max_chars_chunk: int, is_v2_turbo: bool, full_text: str = "") -> int:
     requested = int(max_chars_chunk or MAX_CHARS_PER_CHUNK)
     if is_v2_turbo:
@@ -828,17 +831,65 @@ def get_effective_chunk_chars(max_chars_chunk: int, is_v2_turbo: bool, full_text
 
     if chars <= 180:
         target_words_per_chunk = 14
-        hard_cap = 85
+        hard_cap = 90
     elif chars <= 360:
-        target_words_per_chunk = 11
-        hard_cap = 68
+        target_words_per_chunk = 14
+        hard_cap = 82
     else:
-        target_words_per_chunk = 9
-        hard_cap = 58
+        target_words_per_chunk = 12
+        hard_cap = 72
 
     desired_chunks = max(1, int(np.ceil(max(1, words) / target_words_per_chunk)))
     chars_by_length = int(np.ceil(chars / desired_chunks)) + 8
-    return max(42, min(requested, hard_cap, chars_by_length))
+    return max(56, min(requested, hard_cap, chars_by_length))
+
+def rebalance_text_chunks(chunks: list[str], max_chars: int) -> list[str]:
+    clean_chunks = [re.sub(r"\s+", " ", str(chunk or "").strip()) for chunk in chunks]
+    clean_chunks = [chunk for chunk in clean_chunks if chunk]
+    if len(clean_chunks) <= 1:
+        return clean_chunks
+
+    soft_cap = max(max_chars + 18, int(max_chars * 1.35))
+    dangling_words = {
+        "và", "với", "của", "cho", "từ", "đến", "trên", "dưới",
+        "trong", "ngoài", "cả", "mà", "nhưng", "nên", "rồi"
+    }
+
+    merged: list[str] = []
+    idx = 0
+    while idx < len(clean_chunks):
+        chunk = clean_chunks[idx]
+        words = chunk.split()
+        is_short = len(chunk) < 34 or count_text_words(chunk) <= 4
+        has_dangling_edge = bool(words) and (
+            words[-1].strip(",;:.!?").lower() in dangling_words
+            or words[0].strip(",;:.!?").lower() in dangling_words
+        )
+
+        if (is_short or has_dangling_edge) and idx + 1 < len(clean_chunks):
+            combined = f"{chunk} {clean_chunks[idx + 1]}".strip()
+            if len(combined) <= soft_cap:
+                merged.append(combined)
+                idx += 2
+                continue
+
+        if (is_short or has_dangling_edge) and merged:
+            combined = f"{merged[-1]} {chunk}".strip()
+            if len(combined) <= soft_cap:
+                merged[-1] = combined
+                idx += 1
+                continue
+
+        merged.append(chunk)
+        idx += 1
+
+    if len(merged) == len(clean_chunks):
+        return merged
+    return rebalance_text_chunks(merged, max_chars)
+
+def split_text_for_standard_tts(text: str, max_chars: int) -> list[str]:
+    chunks = split_text_into_chunks(text, max_chars=max_chars)
+    return rebalance_text_chunks(chunks, max_chars)
 
 def estimate_min_audio_seconds_for_text(text: str) -> float:
     value = re.sub(r"\s+", " ", str(text or "").strip())
@@ -1630,7 +1681,7 @@ def synthesize_speech(text: str, voice_choice: str, custom_audio, custom_text: s
             phonemes = phonemize_with_dict(normalized_text, skip_normalize=True)
             text_chunks = split_into_chunks_v2(phonemes, max_chunk_size=effective_max_chars)
         else:
-            text_chunks = split_text_into_chunks(normalized_text, max_chars=effective_max_chars)
+            text_chunks = split_text_for_standard_tts(normalized_text, max_chars=effective_max_chars)
             
         total_chunks = len(text_chunks)
 
@@ -1798,7 +1849,7 @@ def synthesize_speech(text: str, voice_choice: str, custom_audio, custom_text: s
             phonemes = phonemize_with_dict(normalized_text, skip_normalize=True)
             text_chunks = split_into_chunks_v2(phonemes, max_chunk_size=effective_max_chars)
         else:
-            text_chunks = split_text_into_chunks(normalized_text, max_chars=effective_max_chars)
+            text_chunks = split_text_for_standard_tts(normalized_text, max_chars=effective_max_chars)
         
         def producer_thread():
             nonlocal error_msg
