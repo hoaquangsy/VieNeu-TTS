@@ -800,14 +800,45 @@ def split_chunk_for_retry(chunk_text: str, max_chars: int) -> list[str]:
         return [" ".join(words[:mid]), " ".join(words[mid:])]
     return [text]
 
-def get_effective_chunk_chars(max_chars_chunk: int, is_v2_turbo: bool) -> int:
+def analyze_tts_text_length(text: str) -> dict:
+    value = re.sub(r"\s+", " ", str(text or "").strip())
+    words = re.findall(r"\w+", value, flags=re.UNICODE)
+    sentence_count = len([p for p in re.split(r"[.!?]+", value) if p.strip()])
+    return {
+        "text": value,
+        "chars": len(value),
+        "words": len(words),
+        "sentences": max(1, sentence_count),
+    }
+
+def get_effective_chunk_chars(max_chars_chunk: int, is_v2_turbo: bool, full_text: str = "") -> int:
     requested = int(max_chars_chunk or MAX_CHARS_PER_CHUNK)
     if is_v2_turbo:
         return requested
 
-    # GGUF CPU can emit an early end token on long prompts. Smaller chunks are
-    # slower but make missing tail text much less likely.
-    return max(48, min(requested, 90))
+    info = analyze_tts_text_length(full_text)
+    chars = info["chars"]
+    words = info["words"]
+
+    if chars <= 0:
+        return max(48, min(requested, 90))
+
+    if chars <= 90 and words <= 18:
+        return max(48, min(requested, 110))
+
+    if chars <= 180:
+        target_words_per_chunk = 14
+        hard_cap = 85
+    elif chars <= 360:
+        target_words_per_chunk = 11
+        hard_cap = 68
+    else:
+        target_words_per_chunk = 9
+        hard_cap = 58
+
+    desired_chunks = max(1, int(np.ceil(max(1, words) / target_words_per_chunk)))
+    chars_by_length = int(np.ceil(chars / desired_chunks)) + 8
+    return max(42, min(requested, hard_cap, chars_by_length))
 
 def estimate_min_audio_seconds_for_text(text: str) -> float:
     value = re.sub(r"\s+", " ", str(text or "").strip())
@@ -817,7 +848,7 @@ def estimate_min_audio_seconds_for_text(text: str) -> float:
     words = re.findall(r"\w+", value, flags=re.UNICODE)
     word_count = len(words)
     char_count = len(value)
-    return min(18.0, max(0.65, word_count * 0.2, char_count * 0.038))
+    return min(18.0, max(0.65, word_count * 0.24, char_count * 0.045))
 
 def is_probably_truncated_audio(wav, text: str, sr: int = 24000) -> bool:
     if wav is None or len(wav) == 0:
@@ -1592,7 +1623,7 @@ def synthesize_speech(text: str, voice_choice: str, custom_audio, custom_text: s
 
         normalized_text = safe_normalize_text_for_tts(raw_text)
         is_v2_turbo = "v2-Turbo" in (current_backbone or "")
-        effective_max_chars = get_effective_chunk_chars(max_chars_chunk, is_v2_turbo)
+        effective_max_chars = get_effective_chunk_chars(max_chars_chunk, is_v2_turbo, normalized_text)
         
         if is_v2_turbo:
             # Phoneme-based splitting for accurate progress reporting
@@ -1762,7 +1793,7 @@ def synthesize_speech(text: str, voice_choice: str, custom_audio, custom_text: s
         
         normalized_text = safe_normalize_text_for_tts(raw_text)
         is_v2_turbo = "v2-Turbo" in (current_backbone or "")
-        effective_max_chars = get_effective_chunk_chars(max_chars_chunk, is_v2_turbo)
+        effective_max_chars = get_effective_chunk_chars(max_chars_chunk, is_v2_turbo, normalized_text)
         if is_v2_turbo:
             phonemes = phonemize_with_dict(normalized_text, skip_normalize=True)
             text_chunks = split_into_chunks_v2(phonemes, max_chunk_size=effective_max_chars)
