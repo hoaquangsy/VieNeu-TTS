@@ -800,6 +800,36 @@ def split_chunk_for_retry(chunk_text: str, max_chars: int) -> list[str]:
         return [" ".join(words[:mid]), " ".join(words[mid:])]
     return [text]
 
+def get_effective_chunk_chars(max_chars_chunk: int, is_v2_turbo: bool) -> int:
+    requested = int(max_chars_chunk or MAX_CHARS_PER_CHUNK)
+    if is_v2_turbo:
+        return requested
+
+    # GGUF CPU can emit an early end token on long prompts. Smaller chunks are
+    # slower but make missing tail text much less likely.
+    return max(64, min(requested, 150))
+
+def estimate_min_audio_seconds_for_text(text: str) -> float:
+    value = re.sub(r"\s+", " ", str(text or "").strip())
+    if not value:
+        return 0.0
+
+    words = re.findall(r"\w+", value, flags=re.UNICODE)
+    word_count = len(words)
+    char_count = len(value)
+    return min(18.0, max(0.7, word_count * 0.12, char_count * 0.026))
+
+def is_probably_truncated_audio(wav, text: str, sr: int = 24000) -> bool:
+    if wav is None or len(wav) == 0:
+        return True
+
+    value = re.sub(r"\s+", " ", str(text or "").strip())
+    if len(value) < 80:
+        return False
+
+    duration = float(len(wav)) / float(sr)
+    return duration < estimate_min_audio_seconds_for_text(value)
+
 def synthesize_chunk_with_retry(
     tts_obj,
     chunk_text: str,
@@ -869,7 +899,7 @@ def synthesize_chunk_with_retry(
     for attempt in attempts:
         try:
             wav = tts_obj.infer(attempt["text"], **attempt["kwargs"])
-            if wav is not None and len(wav) > 0:
+            if wav is not None and len(wav) > 0 and not is_probably_truncated_audio(wav, attempt["text"]):
                 return [wav]
         except Exception as exc:
             last_error = exc
@@ -1562,13 +1592,14 @@ def synthesize_speech(text: str, voice_choice: str, custom_audio, custom_text: s
 
         normalized_text = safe_normalize_text_for_tts(raw_text)
         is_v2_turbo = "v2-Turbo" in (current_backbone or "")
+        effective_max_chars = get_effective_chunk_chars(max_chars_chunk, is_v2_turbo)
         
         if is_v2_turbo:
             # Phoneme-based splitting for accurate progress reporting
             phonemes = phonemize_with_dict(normalized_text, skip_normalize=True)
-            text_chunks = split_into_chunks_v2(phonemes, max_chunk_size=max_chars_chunk)
+            text_chunks = split_into_chunks_v2(phonemes, max_chunk_size=effective_max_chars)
         else:
-            text_chunks = split_text_into_chunks(normalized_text, max_chars=max_chars_chunk)
+            text_chunks = split_text_into_chunks(normalized_text, max_chars=effective_max_chars)
             
         total_chunks = len(text_chunks)
 
@@ -1601,7 +1632,7 @@ def synthesize_speech(text: str, voice_choice: str, custom_audio, custom_text: s
                         ref_codes,
                         ref_text_raw,
                         temperature,
-                        max_chars_chunk,
+                        effective_max_chars,
                         True,
                     )
                     all_wavs.extend(chunk_wavs)
@@ -1645,7 +1676,7 @@ def synthesize_speech(text: str, voice_choice: str, custom_audio, custom_text: s
                             ref_codes,
                             ref_text_raw,
                             temperature,
-                            max_chars_chunk,
+                            effective_max_chars,
                             False,
                         )
                         all_wavs.extend(retry_wavs)
@@ -1663,7 +1694,7 @@ def synthesize_speech(text: str, voice_choice: str, custom_audio, custom_text: s
                         ref_codes,
                         ref_text_raw,
                         temperature,
-                        max_chars_chunk,
+                        effective_max_chars,
                         False,
                     )
                     all_wavs.extend(chunk_wavs)
@@ -1731,11 +1762,12 @@ def synthesize_speech(text: str, voice_choice: str, custom_audio, custom_text: s
         
         normalized_text = safe_normalize_text_for_tts(raw_text)
         is_v2_turbo = "v2-Turbo" in (current_backbone or "")
+        effective_max_chars = get_effective_chunk_chars(max_chars_chunk, is_v2_turbo)
         if is_v2_turbo:
             phonemes = phonemize_with_dict(normalized_text, skip_normalize=True)
-            text_chunks = split_into_chunks_v2(phonemes, max_chunk_size=max_chars_chunk)
+            text_chunks = split_into_chunks_v2(phonemes, max_chunk_size=effective_max_chars)
         else:
-            text_chunks = split_text_into_chunks(normalized_text, max_chars=max_chars_chunk)
+            text_chunks = split_text_into_chunks(normalized_text, max_chars=effective_max_chars)
         
         def producer_thread():
             nonlocal error_msg
@@ -1751,7 +1783,7 @@ def synthesize_speech(text: str, voice_choice: str, custom_audio, custom_text: s
                             chunk_text, 
                             ref_codes=ref_codes, 
                             temperature=temperature,
-                            max_chars=max_chars_chunk,
+                            max_chars=effective_max_chars,
                             skip_normalize=True,
                             skip_phonemize=True,
                             emotion_tag=""
@@ -1762,7 +1794,7 @@ def synthesize_speech(text: str, voice_choice: str, custom_audio, custom_text: s
                             ref_codes=ref_codes, 
                             ref_text=ref_text_raw,
                             temperature=temperature,
-                            max_chars=max_chars_chunk,
+                            max_chars=effective_max_chars,
                             skip_normalize=True,
                             emotion_tag=""
                         )
