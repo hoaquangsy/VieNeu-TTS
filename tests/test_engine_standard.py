@@ -1,4 +1,5 @@
 import pytest
+import sys
 from unittest.mock import MagicMock, patch
 import numpy as np
 import torch
@@ -40,8 +41,11 @@ def mock_torch_components():
 
 @pytest.fixture
 def mock_tts_instance(mock_torch_components):
-    with patch("transformers.AutoTokenizer.from_pretrained", return_value=mock_torch_components["tokenizer"]), \
-         patch("transformers.AutoModelForCausalLM.from_pretrained", return_value=mock_torch_components["model"]), \
+    mock_transformers = MagicMock()
+    mock_peft = MagicMock()
+    with patch.dict(sys.modules, {"transformers": mock_transformers, "peft": mock_peft}), \
+         patch("transformers.AutoTokenizer.from_pretrained", return_value=mock_torch_components["tokenizer"], create=True), \
+         patch("transformers.AutoModelForCausalLM.from_pretrained", return_value=mock_torch_components["model"], create=True), \
          patch("vieneu.standard.BaseVieneuTTS._load_codec"), \
          patch("vieneu.base.hf_hub_download", return_value="dummy_path"), \
          patch("pathlib.Path.exists", return_value=True), \
@@ -49,7 +53,7 @@ def mock_tts_instance(mock_torch_components):
          patch("json.load", return_value={"presets": {"test_voice": {"codes": [1, 2], "text": "test"}}, "default_voice": "test_voice"}), \
          patch.object(VieNeuTTS, '_warmup_model'):
         
-        tts = VieNeuTTS(backbone_repo="dummy", backbone_device="cpu")
+        tts = VieNeuTTS(backbone_repo="dummy", backbone_device="cpu", gguf_filename=None)
         tts.codec = mock_torch_components["codec"]
         tts._preset_voices = {"test_voice": {"codes": [1, 2, 3], "text": "test"}}
         return tts
@@ -79,10 +83,12 @@ def test_vieneu_tts_infer_batch(mock_tts_instance):
         assert len(results) == 2
 
 def test_lora_loading_logic(mock_tts_instance):
-    with patch("peft.PeftModel.from_pretrained") as mock_peft:
-        mock_tts_instance.load_lora_adapter("lora_repo")
+    with patch("sys.modules", {**sys.modules, "peft": MagicMock()}):
+        import peft
+        with patch.object(peft.PeftModel, "from_pretrained") as mock_peft_method:
+            mock_tts_instance.load_lora_adapter("lora_repo")
         assert mock_tts_instance._lora_loaded is True
-        mock_peft.assert_called_once()
+        mock_peft_method.assert_called_once()
 
         with patch.object(mock_tts_instance.backbone, 'unload', return_value=mock_tts_instance.backbone):
             mock_tts_instance.unload_lora_adapter()

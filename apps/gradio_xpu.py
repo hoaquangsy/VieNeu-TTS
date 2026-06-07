@@ -24,7 +24,23 @@ import gc
 from vieneu.core_xpu import XPUVieNeuTTS
 from vieneu_utils.core_utils import split_text_into_chunks, join_audio_chunks, env_bool
 from sea_g2p import Normalizer
-from functools import lru_cache
+
+from apps.ui_utils import (
+    _format_duration,
+    _split_estimate_status,
+    wrap_with_estimate,
+    cleanup_gpu_memory,
+    get_ref_text_cached,
+    on_codec_change,
+    validate_audio_duration,
+    on_custom_id_change
+)
+from apps.ui_constants import (
+    theme,
+    css,
+    head_html,
+    DEFAULT_TEXT_GPU
+)
 
 try:
     if not hasattr(torch, 'xpu') or not torch.xpu.is_available():
@@ -101,19 +117,6 @@ def restore_ui_state():
         gr.update(interactive=model_loaded), # btn_generate
         gr.update(interactive=False)         # btn_stop
     )
-
-@lru_cache(maxsize=32)
-def get_ref_text_cached(text_path: str) -> str:
-    """Cache reference text loading"""
-    with open(text_path, "r", encoding="utf-8") as f:
-        return f.read()
-
-def cleanup_gpu_memory():
-    """Aggressively cleanup XPU memory"""
-    if torch.xpu.is_available():
-        torch.xpu.empty_cache()
-        torch.xpu.synchronize()
-    gc.collect()
 
 def load_model(backbone_choice: str, codec_choice: str, device_choice: str, 
                custom_model_id: str = "", custom_base_model: str = "", custom_hf_token: str = ""):
@@ -353,11 +356,31 @@ def synthesize_speech(text: str, voice_choice: str, custom_audio, custom_text: s
         
         if use_batch and total_chunks > 1:
             try:
+                num_batches = (
+                    total_chunks + max_batch_size_run - 1
+                ) // max_batch_size_run
+                total_batch_duration = 0.0
+                completed_batches = 0
+
                 for i in range(0, len(text_chunks), max_batch_size_run):
-                    yield None, f"⏳ Đang xử lý batch {i//max_batch_size_run + 1} ..."
+                    batch_idx = i // max_batch_size_run
+                    estimate_info = ""
+                    if completed_batches > 0:
+                        average_batch_duration = total_batch_duration / completed_batches
+                        estimated_total = average_batch_duration * num_batches
+                        estimated_remaining = average_batch_duration * max(0, num_batches - batch_idx)
+                        estimate_info = (
+                            f" | Ước tính còn lại: {_format_duration(estimated_remaining)}"
+                            f" / tổng: {_format_duration(estimated_total)}"
+                        )
+                    yield (
+                        None,
+                        f"⏳ Đang xử lý batch {batch_idx + 1}/{num_batches}{estimate_info} ...",
+                    )
                     batch_chunks = text_chunks[i : i + max_batch_size_run]
                     
                     # Gọi hàm infer_batch đã viết ở trên
+                    batch_start_time = time.time()
                     batch_results = tts.infer_batch(
                         texts = batch_chunks,  
                         ref_codes=ref_codes, 
@@ -365,9 +388,24 @@ def synthesize_speech(text: str, voice_choice: str, custom_audio, custom_text: s
                         temperature=temperature,
                         skip_normalize=True
                     )
-                    
+                    batch_duration = time.time() - batch_start_time
+                    total_batch_duration += batch_duration
+                    completed_batches += 1
+                    average_batch_duration = total_batch_duration / completed_batches
+                    estimated_total = average_batch_duration * num_batches
+                    estimated_remaining = average_batch_duration * max(0, num_batches - completed_batches)
+
                     if batch_results is not None and len(batch_results) > 0:
                         all_wavs.extend(batch_results)
+                    yield (
+                        None,
+                        (
+                            f"✅ Xong batch {batch_idx + 1}/{num_batches} "
+                            f"(trung bình batch: {_format_duration(average_batch_duration)}, "
+                            f"ước tính còn lại: {_format_duration(estimated_remaining)}, "
+                            f"tổng: {_format_duration(estimated_total)})"
+                        ),
+                    )
 
                 if not all_wavs:
                     yield None, "❌ Không sinh được audio nào."
@@ -550,110 +588,7 @@ def synthesize_speech(text: str, voice_choice: str, custom_audio, custom_text: s
             
             cleanup_gpu_memory()
 
-
-# --- 4. UI SETUP ---
-theme = gr.themes.Soft(
-    primary_hue="indigo",
-    secondary_hue="cyan",
-    neutral_hue="slate",
-    font=[gr.themes.GoogleFont('Inter'), 'ui-sans-serif', 'system-ui'],
-).set(
-    button_primary_background_fill="linear-gradient(90deg, #6366f1 0%, #0ea5e9 100%)",
-    button_primary_background_fill_hover="linear-gradient(90deg, #4f46e5 0%, #0284c7 100%)",
-)
-
-css = """
-.container { max-width: 1400px; margin: auto; }
-.header-box {
-    text-align: center;
-    margin-bottom: 25px;
-    padding: 25px;
-    background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
-    border-radius: 12px;
-    color: white !important;
-}
-.header-title {
-    font-size: 2.5rem;
-    font-weight: 800;
-    color: white !important;
-}
-.gradient-text {
-    background: -webkit-linear-gradient(45deg, #60A5FA, #22D3EE);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-}
-.header-icon {
-    color: white;
-}
-.status-box {
-    font-weight: 500;
-    border: 1px solid rgba(99, 102, 241, 0.1);
-    background: rgba(99, 102, 241, 0.03);
-    border-radius: 8px;
-}
-.status-box textarea {
-    text-align: center;
-    font-family: inherit;
-}
-.model-card-content {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
-    align-items: center;
-    gap: 15px;
-    font-size: 0.9rem;
-    text-align: center;
-    color: white !important;
-}
-.model-card-item {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    color: white !important;
-}
-.model-card-item strong {
-    color: white !important;
-}
-.model-card-item span {
-    color: white !important;
-}
-.model-card-link {
-    color: #60A5FA;
-    text-decoration: none;
-    font-weight: 500;
-    transition: color 0.2s;
-}
-.model-card-link:hover {
-    color: #22D3EE;
-    text-decoration: underline;
-}
-.warning-banner {
-    background-color: #f0f9ff;
-    border: 1px solid #bae6fd;
-    border-radius: 12px;
-    padding: 16px;
-    margin-bottom: 20px;
-}
-.warning-banner-title {
-    color: #0369a1;
-    font-weight: 700;
-    font-size: 1.1rem;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-bottom: 12px;
-}
-.warning-banner-content {
-    color: #0c4a6e;
-    font-size: 0.9rem;
-    line-height: 1.5;
-}
-"""
-
-head_html = """
-<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🦜</text></svg>">
-"""
+synthesize_speech_with_estimate = wrap_with_estimate(synthesize_speech)
 
 with gr.Blocks(theme=theme, css=css, title="VieNeu-TTS (XPU)", head=head_html) as demo:
 
@@ -746,7 +681,7 @@ with gr.Blocks(theme=theme, css=css, title="VieNeu-TTS (XPU)", head=head_html) a
                 text_input = gr.Textbox(
                     label=f"Văn bản",
                     lines=4,
-                    value="Hà Nội, trái tim của Việt Nam, là một thành phố ngàn năm văn hiến với bề dày lịch sử và văn hóa độc đáo. Bước chân trên những con phố cổ kính quanh Hồ Hoàn Kiếm, du khách như được du hành ngược thời gian, chiêm ngưỡng kiến trúc Pháp cổ điển hòa quyện với nét kiến trúc truyền thống Việt Nam. Mỗi con phố trong khu phố cổ mang một tên gọi đặc trưng, phản ánh nghề thủ công truyền thống từng thịnh hành nơi đây như phố Hàng Bạc, Hàng Đào, Hàng Mã. Ẩm thực Hà Nội cũng là một điểm nhấn đặc biệt, từ tô phở nóng hổi buổi sáng, bún chả thơm lừng trưa hè, đến chè Thái ngọt ngào chiều thu. Những món ăn dân dã này đã trở thành biểu tượng của văn hóa ẩm thực Việt, được cả thế giới yêu mến. Người Hà Nội nổi tiếng với tính cách hiền hòa, lịch thiệp nhưng cũng rất cầu toàn trong từng chi tiết nhỏ, từ cách pha trà sen cho đến cách chọn hoa sen tây để thưởng trà.",
+                    value=DEFAULT_TEXT_GPU,
                 )
                 
                 with gr.Tabs() as tabs:
@@ -820,21 +755,23 @@ with gr.Blocks(theme=theme, css=css, title="VieNeu-TTS (XPU)", head=head_html) a
                     type="filepath",
                     autoplay=True
                 )
-                status_output = gr.Textbox(
-                    label="Trạng thái", 
-                    elem_classes="status-box",
-                    lines=2,
-                    max_lines=10,
-                    show_copy_button=True
-                )
+                with gr.Group():
+                    status_output = gr.Textbox(
+                        label="Trạng thái", 
+                        elem_classes="status-box",
+                        lines=2,
+                        max_lines=10,
+                        show_copy_button=True
+                    )
+                with gr.Group():
+                    estimate_output = gr.Textbox(
+                        label="Ước tính thời gian",
+                        elem_classes="estimate-box",
+                        lines=2,
+                        max_lines=4,
+                        show_copy_button=True
+                    )
                 gr.Markdown("<div style='text-align: center; color: #64748b; font-size: 0.8rem;'>🔒 Audio được đóng dấu bản quyền ẩn (Watermarker) để bảo mật và định danh AI.</div>")
-        
-        # --- EVENT HANDLERS ---
-        def on_codec_change(codec: str, current_mode: str):
-            is_onnx = "onnx" in codec.lower()
-            if is_onnx and current_mode == "custom_mode":
-                return gr.update(visible=False), gr.update(selected="preset_mode"), "preset_mode"
-            return gr.update(visible=not is_onnx), gr.update(), current_mode
         
         codec_select.change(
             on_codec_change, 
@@ -845,20 +782,6 @@ with gr.Blocks(theme=theme, css=css, title="VieNeu-TTS (XPU)", head=head_html) a
         tab_preset.select(lambda: "preset_mode", outputs=current_mode_state)
         tab_custom.select(lambda: "custom_mode", outputs=current_mode_state)
         
-        def validate_audio_duration(audio_path):
-            if not audio_path:
-                return gr.update(visible=False)
-            try:
-                info = sf.info(audio_path)
-                if info.duration > 5.1:
-                    return gr.update(
-                        value=f"⚠️ **Cảnh báo:** Audio mẫu hiện tại dài {info.duration:.1f} giây. Để có kết quả clone giọng tối ưu, bạn nên sử dụng đoạn audio có độ dài lý tưởng từ **3 đến 5 giây**.",
-                        visible=True
-                    )
-            except Exception:
-                pass
-            return gr.update(visible=False)
-
         custom_audio.change(validate_audio_duration, inputs=[custom_audio], outputs=[cloning_warning_msg])
 
         def on_backbone_change(choice):
@@ -871,15 +794,6 @@ with gr.Blocks(theme=theme, css=css, title="VieNeu-TTS (XPU)", head=head_html) a
             outputs=[custom_model_group]
         )
         
-        def on_custom_id_change(model_id):
-            if model_id and "lora" in model_id.lower():
-                if "0.3" in model_id:
-                    base_model = "VieNeu-TTS-0.3B (GPU)"
-                else:
-                    base_model = "VieNeu-TTS (GPU)"
-                return (gr.update(visible=True, value=base_model), gr.update(), gr.update())
-            return (gr.update(visible=False), gr.update(), gr.update())
-            
         custom_backbone_model_id.change(
             on_custom_id_change,
             inputs=[custom_backbone_model_id],
@@ -894,18 +808,18 @@ with gr.Blocks(theme=theme, css=css, title="VieNeu-TTS (XPU)", head=head_html) a
         )
         
         generate_event = btn_generate.click(
-            fn=synthesize_speech,
+            fn=synthesize_speech_with_estimate,
             inputs=[text_input, voice_select, custom_audio, custom_text, current_mode_state, 
                     generation_mode, use_batch, max_batch_size_run,
                     temperature_slider, max_chars_chunk_slider],
-            outputs=[audio_output, status_output]
+            outputs=[audio_output, status_output, estimate_output]
         )
         
         btn_generate.click(lambda: gr.update(interactive=True), outputs=btn_stop)
         generate_event.then(lambda: gr.update(interactive=False), outputs=btn_stop)
         
         btn_stop.click(fn=None, cancels=[generate_event])
-        btn_stop.click(lambda: (None, "⏹️ Đã dừng tạo giọng nói."), outputs=[audio_output, status_output])
+        btn_stop.click(lambda: (None, "⏹️ Đã dừng tạo giọng nói.", ""), outputs=[audio_output, status_output, estimate_output])
         btn_stop.click(lambda: gr.update(interactive=False), outputs=btn_stop)
 
         demo.load(

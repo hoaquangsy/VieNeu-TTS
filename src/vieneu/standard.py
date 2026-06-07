@@ -336,7 +336,8 @@ class VieNeuTTS(BaseVieneuTTS):
             text_replace_idx = ids.index(text_replace)
             ids = ids[:text_replace_idx] + [text_prompt_start] + input_ids + [text_prompt_end] + ids[text_replace_idx + 1:]
 
-            ids = ids[:speech_replace] + [speech_gen_start] + list(codes)
+            speech_replace_idx = ids.index(speech_replace)
+            ids = ids[:speech_replace_idx] + [speech_gen_start] + list(codes)
         else:
             emotion_prefix_ids = self.tokenizer.encode(emotion_tag, add_special_tokens=False) if emotion_tag else []
             ids = [text_prompt_start] + emotion_prefix_ids + input_ids + [text_prompt_end, speech_gen_start] + list(codes)

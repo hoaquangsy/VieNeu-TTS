@@ -31,7 +31,7 @@ explicit = true
 
 [project]
 name = "vieneu"
-version = "2.6.1"
+version = "3.0.0"
 description = "Advanced on-device Vietnamese TTS with instant voice cloning"
 readme = "README_PYPI.md"
 license = { file = "LICENSE" }
@@ -61,18 +61,20 @@ authors = [
     { name = "Phạm Nguyễn Ngọc Bảo", email = "pnnbao@gmail.com" }
 ]
 requires-python = ">=3.10"
+# Minimal, TORCH-FREE core. `pip install vieneu` runs VieNeu-TTS v3 Turbo on CPU
+# via ONNX Runtime. GPU / older backends (torch, transformers, llama-cpp, lmdeploy,
+# librosa) live in the optional [gpu] extra.
 dependencies = [
-    "sea-g2p>=0.7.5",
-    "onnxruntime>=1.20.0",
-    "llama-cpp-python==0.3.16",
-    "requests",
+    "sea-g2p>=0.7.5",       # phonemizer (Rust, torch-free)
+    "onnxruntime>=1.20.0",  # runs the v3 transformers + MOSS codec
     "numpy",
-    "soundfile",
-    "PyYAML",
-    "gradio>=5.49.1",
-    "perth>=0.2.0",
-    "librosa>=0.11.0",
-    "tqdm",
+    "soundfile",            # audio I/O
+    "soxr",                 # lightweight resampling for voice cloning
+    "tokenizers>=0.20",     # phoneme tokenizer (torch-free)
+    "huggingface_hub",      # fetch ONNX / config / tokenizer / voices
+    "PyYAML",               # gradio config.yaml
+    "gradio>=5.49.1",       # web UI (vieneu-web)
+    "perth>=0.2.0",         # optional audio watermark (skipped gracefully if absent)
 ]
 
 [project.urls]
@@ -84,22 +86,32 @@ dependencies = [
 "Changelog" = "https://github.com/pnnbao97/VieNeu-TTS/releases"
 
 [project.optional-dependencies]
+# GPU + older backends (v1/v2 PyTorch & GGUF, v3 Turbo on GPU). Adds the heavy deps
+# that the minimal/ONNX install deliberately omits.
 gpu = [
     "torch",
     "torchaudio",
+    "transformers",
+    "librosa>=0.11.0",
     "neucodec>=0.0.4",
     "huggingface-hub>=1.5,<2",
     "lmdeploy; sys_platform != 'darwin'",
     "triton-windows; sys_platform == 'win32'",
     "triton; sys_platform == 'linux'",
-    "transformers; sys_platform == 'darwin'",
     "accelerate; sys_platform == 'darwin'",
+    "llama-cpp-python==0.3.16",
 ]
 
 [dependency-groups]
 dev = [
     "pytest",
     "pytest-asyncio",
+    # Test-only deps for the GPU/standard/xpu backend tests (NOT in the runtime
+    # install — `pip install vieneu` stays minimal/torch-free). CI installs the dev
+    # group, so these tests can import librosa/transformers/neucodec-based engines.
+    "librosa>=0.11.0",
+    "transformers",
+    "neucodec>=0.0.4",
 ]
 gpu = [
     "neucodec>=0.0.4",
@@ -114,6 +126,7 @@ gpu = [
     "transformers; sys_platform == 'darwin'",
     "accelerate; sys_platform == 'darwin'",
     "trafilatura>=2.0.0",
+    "llama-cpp-python==0.3.16",
 ]
 
 [tool.pytest.ini_options]
@@ -134,7 +147,7 @@ where = ["src", "."]
 include = ["vieneu*", "vieneu_utils*", "apps*", "examples*"]
 
 [tool.setuptools.package-data]
-vieneu = ["assets/samples/*"]
+vieneu = ["assets/*.json", "assets/samples/*"]
 
 [tool.uv.sources]
 

@@ -5,12 +5,13 @@ from typing import Optional, List, Any, Generator, Dict
 from pathlib import Path
 from .base import BaseVieneuTTS
 from .utils import normalize_device
-from vieneu_utils.phonemize_text import phonemize_text, phonemize_batch
+from vieneu_utils.phonemize_text import phonemize_text, phonemize_batch, phonemize_to_chunks
 from vieneu_utils.core_utils import split_into_chunks_v2, get_silence_duration_v2
 from tqdm import tqdm
 import sys
 
 logger = logging.getLogger("Vieneu.Turbo")
+
 
 class BaseTurboVieNeuTTS(BaseVieneuTTS):
     """Internal base class for Turbo TTS variants to share ONNX and prompt logic."""
@@ -308,9 +309,26 @@ class TurboVieNeuTTS(BaseTurboVieNeuTTS):
         )
         logger.info(f"✅ Turbo GGUF ready")
 
-    def infer(self, text: str, voice: Optional[Any] = None, ref_codes: Optional[Any] = None, temperature: float = 0.4, top_k: int = 50, max_chars: int = 256, skip_normalize: bool = False, skip_phonemize: bool = False, show_progress: bool = True, apply_watermark: bool = True, **kwargs) -> np.ndarray:
-        phonemes = phonemize_text(text) if not skip_phonemize else text
-        chunks = split_into_chunks_v2(phonemes, max_chunk_size=max_chars)
+    def infer(
+        self,
+        text: str,
+        voice: Optional[Any] = None,
+        ref_codes: Optional[Any] = None,
+        temperature: float = 0.4,
+        top_k: int = 50,
+        max_chars: int = 256,
+        skip_normalize: bool = False,
+        skip_phonemize: bool = False,
+        show_progress: bool = True,
+        apply_watermark: bool = True,
+        **kwargs,
+    ) -> np.ndarray:
+        if skip_phonemize:
+            chunks = split_into_chunks_v2(text, max_chunk_size=max_chars)
+        else:
+            chunks = phonemize_to_chunks(
+                text, max_chars=max_chars, skip_normalize=skip_normalize
+            )
 
         if voice is None:
             voice = ref_codes if ref_codes is not None else self.get_preset_voice()
@@ -337,9 +355,24 @@ class TurboVieNeuTTS(BaseTurboVieNeuTTS):
             final_wav = self._apply_watermark(final_wav)
         return final_wav
 
-    def infer_stream(self, text: str, voice: Optional[Any] = None, ref_codes: Optional[Any] = None, temperature: float = 0.4, top_k: int = 50, max_chars: int = 256, **kwargs) -> Generator[np.ndarray, None, None]:
-        phonemes = phonemize_text(text)
-        chunks = split_into_chunks_v2(phonemes, max_chunk_size=max_chars)
+    def infer_stream(
+        self,
+        text: str,
+        voice: Optional[Any] = None,
+        ref_codes: Optional[Any] = None,
+        temperature: float = 0.4,
+        top_k: int = 50,
+        max_chars: int = 256,
+        skip_normalize: bool = False,
+        skip_phonemize: bool = False,
+        **kwargs,
+    ) -> Generator[np.ndarray, None, None]:
+        if skip_phonemize:
+            chunks = split_into_chunks_v2(text, max_chunk_size=max_chars)
+        else:
+            chunks = phonemize_to_chunks(
+                text, max_chars=max_chars, skip_normalize=skip_normalize
+            )
 
         if voice is None:
             voice = ref_codes if ref_codes is not None else self.get_preset_voice()

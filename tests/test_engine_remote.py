@@ -28,7 +28,7 @@ def test_remote_format_prompt(remote_tts):
             with patch("vieneu_utils.phonemize_text.phonemize_with_dict", return_value="th-e g-io-i"):
                 prompt = remote_tts._format_prompt(ref_codes, ref_text, input_text)
                 assert "<|TEXT_PROMPT_START|>ch-ao b-an th-e g-io-i<|TEXT_PROMPT_END|>" in prompt
-                assert "assistant:<|SPEECH_GENERATION_START|><|speech_1|><|speech_2|><|speech_3|>" in prompt
+                assert "<|SPEECH_GENERATION_START|><|speech_1|><|speech_2|><|speech_3|>" in prompt
 
 @patch("requests.post")
 def test_remote_infer_single_chunk(mock_post, remote_tts):
@@ -59,7 +59,7 @@ async def test_remote_infer_async_chunk(remote_tts):
         mock_session.post.return_value.__aexit__ = AsyncMock(return_value=None)
 
         audio = await remote_tts._infer_chunk_async(
-            mock_session, "chunk", [1], "ref_text", 1.0, 50
+            mock_session, "chunk", [1], "ref_text", 1.0, 50, 1.2
         )
         assert isinstance(audio, np.ndarray)
         assert len(audio) == 1000

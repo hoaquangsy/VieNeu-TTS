@@ -92,8 +92,8 @@ def run_server(args: argparse.Namespace) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="VieNeu-TTS Remote Server CLI")
-    parser.add_argument("--model", type=str, default="pnnbao-ump/VieNeu-TTS", help="HuggingFace model ID or local path")
-    parser.add_argument("--model-name", type=str, default="pnnbao-ump/VieNeu-TTS", help="Model name for API mapping")
+    parser.add_argument("--model", type=str, default="pnnbao-ump/VieNeu-TTS-v2", help="HuggingFace model ID or local path")
+    parser.add_argument("--model-name", type=str, default="pnnbao-ump/VieNeu-TTS-v2", help="Model name for API mapping")
     parser.add_argument("--port", type=int, default=23333, help="Server port")
     parser.add_argument("--tp", type=int, default=1, help="Tensor parallel size")
     parser.add_argument("--memory-util", type=float, default=0.3, help="GPU memory utilization (0.0-1.0)")

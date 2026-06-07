@@ -17,8 +17,8 @@ def main():
     
     # Replace with your actual LMDeploy server URL
     # Example: 'http://localhost:23333/v1' or a public tunnel URL
-    REMOTE_API_BASE = 'http://bore.pub:34939/v1' # Replace with your actual LMDeploy server URL
-    REMOTE_MODEL_ID = "pnnbao-ump/VieNeu-TTS"
+    REMOTE_API_BASE = 'http://localhost:23333/v1' # Replace with your actual server URL
+    REMOTE_MODEL_ID = "pnnbao-ump/VieNeu-TTS-v2"
 
     # ---------------------------------------------------------
     # PART 1: INITIALIZATION
@@ -30,7 +30,8 @@ def main():
         tts = Vieneu(
             mode='remote', 
             api_base=REMOTE_API_BASE, 
-            model_name=REMOTE_MODEL_ID
+            model_name=REMOTE_MODEL_ID,
+            emotion='natural' # Default style
         )
     except Exception as e:
         print(f"❌ Failed to connect: {e}")
@@ -100,11 +101,33 @@ def main():
         )
         tts.save(cloned_audio, "outputs/remote_cloned_output.wav")
         print("💾 Saved remote cloned voice to: outputs/remote_cloned_output.wav")
+    
+    # ---------------------------------------------------------
+    # PART 6: STYLE SWITCHING & SAMPLING PARAMS
+    # ---------------------------------------------------------
+    print("\n--- PART 6: Style Switching & Sampling ---")
+    print("🎭 Testing Natural vs Storytelling styles...")
+    
+    # Natural style (using explicit emotion_tag)
+    audio_nat = tts.infer(
+        "Tôi đang nói bằng phong cách tự nhiên, phù hợp cho trợ lý ảo.",
+        emotion_tag="<|emotion_0|>"
+    )
+    tts.save(audio_nat, "outputs/remote_style_natural.wav")
+    
+    # Storytelling style (None tag) with repetition penalty
+    audio_story = tts.infer(
+        "Ngày xửa ngày xưa, có một con rồng sống trong hang động sâu thẳm...",
+        emotion_tag=None,
+        repetition_penalty=1.2
+    )
+    tts.save(audio_story, "outputs/remote_style_story.wav")
+    print("💾 Saved style variations to outputs/")
 
     # ---------------------------------------------------------
-    # PART 6: NATIVE ASYNC INFERENCE (High Performance)
+    # PART 7: NATIVE ASYNC INFERENCE (High Performance)
     # ---------------------------------------------------------
-    print("\n📌 PART 6: Native Async Processing")
+    print("\n📌 PART 7: Native Async Processing")
     print("=" * 60)
     
     # Define voice for async tasks (Using index 0 as default)
@@ -151,7 +174,7 @@ def main():
         print(f"⚠️  Async example error: {e}")
 
     # ---------------------------------------------------------
-    # PART 7: DONE
+    # PART 8: DONE
     # ---------------------------------------------------------
     print("\n✅ All remote tasks completed!")
     print("📁 Check the 'outputs/' folder for generated files.")

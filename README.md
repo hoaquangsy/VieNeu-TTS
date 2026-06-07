@@ -4,12 +4,24 @@
 [![Discord](https://img.shields.io/badge/Discord-Join%20Us-5865F2?logo=discord&logoColor=white)](https://discord.gg/yJt8kzjzWZ)
 
 [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/drive/1b9PO-lcGZX9pEkEwQmu8MfhSnjxKrALW?usp=sharing)
+[![Hugging Face VieNeu-TTS-v3-Turbo](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-v3--Turbo-red)](https://huggingface.co/pnnbao-ump/VieNeu-TTS-v3-Turbo)
 [![Hugging Face VieNeu-TTS-v2](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-v2-blue)](https://huggingface.co/pnnbao-ump/VieNeu-TTS-v2)
 [![Hugging Face VieNeu-TTS](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-v1-orange)](https://huggingface.co/pnnbao-ump/VieNeu-TTS)
 
 <img width="1087" height="710" alt="image" src="https://github.com/user-attachments/assets/5534b5db-f30b-4d27-8a35-80f1cf6e5d4d" />
 
 **VieNeu-TTS-v2** is the next generation of on-device Vietnamese TTS, featuring **10,000+ hours** of bilingual training, **instant voice cloning**, and a dedicated **Podcast/Conversation** mode.
+
+> [!NOTE]
+> **🆕 VieNeu-TTS v3 Turbo (early access) is out for preview!**
+> A brand-new architecture **designed and trained from scratch by Phạm Nguyễn Ngọc Bảo** (codec: [MOSS-Audio-Tokenizer-Nano](https://huggingface.co/OpenMOSS-Team/MOSS-Audio-Tokenizer-Nano); phonemizer: [sea-g2p](https://github.com/pnnbao97/sea-g2p)):
+> - **48 kHz** high-fidelity audio (up from 24 kHz).
+> - **Built-in default voices** via dedicated speaker tokens — stable, consistent, no reference clip needed.
+> - **Emotion / non-verbal cues** *(experimental)*: drop `[cười]`, `[thở dài]`, `[hắng giọng]` straight into the text.
+> - **Batched generation** (batch size up to 32), including a multi-speaker **Conversation** mode that batches the whole script regardless of speaker.
+> - **Instant voice cloning** from 3–5s of audio.
+>
+> Try it in the Web UI (backbone **"VieNeu-TTS-v3-Turbo (Thử nghiệm)"**) or the SDK (`Vieneu(mode="v3turbo")`). The **full v3** release is coming in the next few weeks.
 
 > [!IMPORTANT]
 > **🚀 VieNeu-TTS-v2 is here!**
@@ -20,7 +32,7 @@
 
 ## ✨ Key Features
 - **10,000+ Hours Training**: Trained on a massive English-Vietnamese dataset for human-like prosody.
-- **Bilingual (En-Vi) Code-switching**: Seamless transitions between languages.
+- **Bilingual (En-Vi) Code-switching**: Powered by [**sea-g2p**](https://github.com/pnnbao97/sea-g2p) for high-fidelity pronunciation and seamless transitions between Vietnamese and English.
 - **Podcast & Conversation Mode**: Multi-speaker dialogue support with automatic character detection.
 - **Instant Voice Cloning**: Clone any voice with just **3-5 seconds** of reference audio.
 - **Ultra-Fast Performance**: Optimized for **GPU (LMDeploy)** and **CPU (GGUF/ONNX)**.
@@ -59,13 +71,17 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
    ```
 
 2. **Install Dependencies:**
-   - **Option 1: Minimal (Turbo/CPU)** - Fast & Lightweight
-     > ⚠️ *Note: This mode only supports **VieNeu-TTS-v2-Turbo (CPU)** — runs on any machine without a GPU, but **audio quality is lower** than Standard VieNeu-TTS (especially for short phrases < 5 words). Recommended for quick testing or deployment on low-end devices.*
+   - **Option 1: CPU & macOS (minimal, torch-free) — recommended for maximum speed** — runs **v3 Turbo via ONNX**
+     > 💡 *No GPU required. Installs only the lightweight ONNX stack; **v3 Turbo runs on CPU (48 kHz)** with default voices, voice cloning and emotion cues. PyTorch is never installed.*
+     >
+     > ⚡ **For the fastest CPU inference, install with `uv sync` — not `pip install`.** `uv sync` reproduces the locked environment that pins the optimized ONNX Runtime build, so you get maximum speed out of the box.
+     >
+     > 🍎 **macOS users: use this option too.** For v3 Turbo the torch-free ONNX path on the CPU is *faster* than the MPS/PyTorch build (`--group gpu`), so prefer `uv sync` for top speed on Apple Silicon.
      ```bash
      uv sync
      ```
-   - **Option 2: Full (GPU/Standard)** - High Quality & Podcast Mode *(For GPU users)*
-     > 💡 *Note: Requires a CUDA-compatible NVIDIA GPU (CUDA version >= 12.8) or Apple Silicon MPS. [NVIDIA Toolkit](https://developer.nvidia.com/cuda-downloads) is required for maximum speed. Enables the full **VieNeu-TTS-v2** backbone for maximum audio quality and high-fidelity voice cloning.*
+   - **Option 2: GPU** — **v3 Turbo (PyTorch) + VieNeu-TTS v2 (GPU)**
+     > 💡 *Requires a CUDA NVIDIA GPU (CUDA ≥ 12.8) or Apple Silicon MPS. [NVIDIA Toolkit](https://developer.nvidia.com/cuda-downloads) recommended. Adds the PyTorch stack so **v3 Turbo runs on GPU** and the **v1 / v2 (GPU)** models become available.*
 
      ```bash
      uv sync --group gpu
@@ -81,90 +97,40 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 
 ## 📦 2. Using the Python SDK (vieneu) <a name="sdk"></a>
 
-The `vieneu` SDK defaults to **Standard mode** (VieNeu-TTS-v2 GGUF + ONNX) when used locally, providing a perfect balance of high audio quality and real-time performance on any CPU or GPU.
+The `vieneu` SDK **defaults to VieNeu-TTS v3 Turbo (48 kHz)**. The minimal install is **torch-free**: on CPU everything runs on **ONNX Runtime** (PyTorch is never imported), and on a CUDA machine it auto-switches to the PyTorch engine. Older models (v1/v2) are available via the `[gpu]` extra.
 
 ### Quick Start
 ```bash
-# Minimal installation (Builds llama-cpp from source - may take a while)
+# Minimal, TORCH-FREE install — runs v3 Turbo on CPU via ONNX Runtime
 pip install vieneu
 
-# Optional: For Windows users (CPU pre-built)
-pip install vieneu --extra-index-url https://pnnbao97.github.io/llama-cpp-python-v0.3.16/cpu/
-
-# Optional: For macOS users (ARM64/Apple Silicon - Enables Metal GPU acceleration)
-pip install vieneu --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/metal/
 ```
 
 ```python
 from vieneu import Vieneu
+from time import time
 
-# Initialize in Standard mode (Default - Highest quality)
-tts = Vieneu(emotion="natural") # emotion="natural" (giọng tự nhiên - mặc định) hoặc "storytelling" (giọng kể chuyện)
+# Default = v3 Turbo. CPU → ONNX (torch-free); GPU → PyTorch (auto-detected).
+tts = Vieneu()
 
-# 1. Simple synthesis (uses default Northern Female voice 'Trúc Ly')
-text = "Chào bạn. Tôi là VieNeu-TTS, tôi có thể giúp bạn đọc sách, làm chatbot thời gian thực, thậm chí clone giọng nói của bạn."
-audio = tts.infer(text=text)
+text = f"""[cười] Trời ơi, cái giọng nó tự nhiên mà nó mượt mà dã man, nghe không khác gì người thật luôn. Giờ thì tha hồ mà quẩy content với cả kho giọng nói đa dạng, đủ mọi sắc thái biểu cảm. Mọi người bật loa lên rồi cùng trải nghiệm thử với mình nhé!"""
 
-# Save to file
-tts.save(audio, "output_Trúc Ly.wav")
-print("💾 Saved to output_Trúc Ly.wav")
+start_time = time()
+# 1. Default voice (Bình An) — 48 kHz, no reference needed
+audio = tts.infer(text)
+tts.save(audio, "output.wav")
+end_time = time()
+print(f"Time taken: {end_time - start_time} seconds")
+# 2. Built-in voices by name
+for label, voice_id in tts.list_preset_voices():
+    print(label, voice_id)
+audio = tts.infer("Mình là Xuân Vĩnh nè!", voice="Xuân Vĩnh")
+tts.save(audio, "output_Xuân Vĩnh.wav")
+# # 3. Emotion / non-verbal cues — EXPERIMENTAL: [cười] [thở dài] [hắng giọng]
+# audio = tts.infer("Nghe hay quá đi [cười]. Để mình nói tiếp [hắng giọng].", voice="Ngọc Linh")
 
-# 2. Using a specific Preset Voice
-voices = tts.list_preset_voices()
-for desc, voice_id in voices:
-    print(f"Voice: {desc} (ID: {voice_id})")
-
-my_voice_id = voices[1][1] if len(voices) > 1 else voices[0][1] # Giọng Phạm Tuyên
-voice_data = tts.get_preset_voice(my_voice_id)
-
-audio_custom = tts.infer(text="Tôi đang nói bằng giọng của Bác sĩ Tuyên.", voice=voice_data)
-
-# 3. Save to file
-tts.save(audio_custom, "output_Phạm Tuyên.wav")
-print("💾 Saved to output_Phạm Tuyên.wav")
-```
-
-### 🚀 Turbo Mode (Bilingual & Extreme Speed)
-Use `mode="turbo"` for the fastest possible inference, especially optimized for real-time English-Vietnamese code-switching.
-> [!WARNING]
-> Turbo Mode has lower audio quality compared to other modes and may produce artifacts or errors for very short sentences.
-
-
-```python
-from vieneu import Vieneu
-
-# Initialize in Turbo mode (v2-Turbo GGUF)
-tts = Vieneu(mode="turbo")
-
-# Turbo v2 supports natural English-Vietnamese transitions
-text = "Hệ thống điện chủ yếu sử dụng alternating current because it is more efficient."
-audio = tts.infer(text=text)
-
-tts.save(audio, "turbo_output.wav")
-```
-
-### 🦜 Zero-shot Voice Cloning (SDK) <a name="cloning"></a>
-Clone any voice with only **3-5 seconds** of audio. 
-
-> [!TIP]
-> **Turbo mode** is recommended for voice cloning as it doesn't require reference text, while **Standard mode** (default) requires providing the `ref_text` for higher accuracy.
-
-```python
-from vieneu import Vieneu
-
-# We'll use turbo mode for easy zero-shot cloning (no ref_text needed)
-tts = Vieneu(mode="turbo")
-
-# 1. Encode the reference audio (3-5 seconds recommended)
-my_voice = tts.encode_reference("examples/audio_ref/example.wav")
-
-# 2. Synthesize with the cloned voice
-audio = tts.infer(
-    text="Đây là giọng nói được clone trực tiếp bằng SDK của VieNeu-TTS.", 
-    voice=my_voice
-)
-
-tts.save(audio, "cloned_voice.wav")
+# # 4. Instant voice cloning from a 3–5s reference clip
+# audio = tts.infer("Đây là giọng được nhân bản tức thì.", ref_audio="my_voice.wav")
 ```
 
 ---
@@ -179,26 +145,33 @@ Deploy VieNeu-TTS as a high-performance API Server (powered by LMDeploy) with a 
 
 **Start the Server with a Public Tunnel (No port forwarding needed):**
 ```bash
-docker run --gpus all -p 23333:23333 pnnbao/vieneu-tts:serve --tunnel
+docker run --gpus all -p 23333:23333 -v huggingface_cache:/root/.cache/huggingface pnnbao/vieneu-tts:latest --tunnel
 ```
 
-*   **Default**: The server loads the `VieNeu-TTS` model for maximum quality.
+*   **Default**: The server loads the `VieNeu-TTS-v2` model for maximum quality.
 *   **Tunneling**: The Docker image includes a built-in `bore` tunnel. Check the container logs to find your public address (e.g., `bore.pub:31631`).
 
 ### 2. Using the SDK (Remote Mode)
 
-Once the server is running, you can connect from anywhere (Colab, Web Apps, etc.) without loading heavy models locally:
+Once the server is running, you can connect from anywhere (Colab, Web Apps, etc.) without loading heavy models locally.
 
+**Installation**:
+```bash
+pip install "vieneu[gpu]"
+```
+
+**Usage**:
 ```python
 from vieneu import Vieneu
 import os
 
 # Configuration
 REMOTE_API_BASE = 'http://your-server-ip:23333/v1'  # Or bore tunnel URL
-REMOTE_MODEL_ID = "pnnbao-ump/VieNeu-TTS"
+REMOTE_MODEL_ID = "pnnbao-ump/VieNeu-TTS-v2"
 
 # Initialization (LIGHTWEIGHT - only loads small codec locally)
-tts = Vieneu(mode='remote', api_base=REMOTE_API_BASE, model_name=REMOTE_MODEL_ID)
+# Default emotion is "natural" (conversational) - set emotion="storytelling" for storytelling mode
+tts = Vieneu(mode='remote', api_base=REMOTE_API_BASE, model_name=REMOTE_MODEL_ID, emotion="natural")
 os.makedirs("outputs", exist_ok=True)
 
 # List remote voices
@@ -260,6 +233,7 @@ docker run --gpus all \
 
 | Model | Format | Device | Bilingual | Features | Speed |
 |---|---|---|---|---|---|
+| **VieNeu-TTS-v3-Turbo** *(early access)* | PyTorch | **GPU/CPU** | ✅ | **48 kHz, Default voices, Cloning, Emotion cues, Conversation** | **Fast (batched)** |
 | **VieNeu-TTS-v2** | PyTorch | **GPU** | ✅ | **Podcast, En-Vi CS** | **Fast (LMDeploy)** |
 | **VieNeu-v2-CPU** | GGUF/ONNX | **CPU/Edge** | ✅ | **Podcast, En-Vi CS** | **Extreme Speed** |
 | **VieNeu-v2-Turbo** | GGUF/ONNX | **CPU/Edge** | ✅ | Lightweight En-Vi | **Ultra Fast** |
@@ -276,6 +250,8 @@ docker run --gpus all \
 - [x] **VieNeu-TTS-v2**: Full high-fidelity bilingual architecture with **Podcast Mode** and **Voice Cloning**.
 - [x] **VieNeu-Codec**: Optimized neural codec for Vietnamese (ONNX).
 - [x] **Turbo Voice Cloning**: Bringing instant cloning to the lightweight Turbo engine.
+- [x] **VieNeu-TTS v3 Turbo (early access)**: New from-scratch 48 kHz architecture — built-in default voices (speaker tokens), experimental emotion cues, batched generation & multi-speaker conversation.
+- [ ] **VieNeu-TTS v3 (full release)**: Complete v3 with finalized quality, stable emotion control, more default voices & streaming server.
 - [ ] **Mobile SDK**: Official support for Android/iOS deployment.
 
 ---
@@ -320,6 +296,6 @@ Thanks to all the amazing people who have contributed to this project!
 
 ## 🙏 Acknowledgements
 
-This project uses [neucodec](https://huggingface.co/neuphonic/neucodec) for audio decoding and [sea-g2p](https://github.com/pnnbao97/sea-g2p) for text normalization and phonemization.
+This project uses [neucodec](https://huggingface.co/neuphonic/neucodec) (v1/v2) and [MOSS-Audio-Tokenizer-Nano](https://huggingface.co/OpenMOSS-Team/MOSS-Audio-Tokenizer-Nano) (v3 Turbo) for audio coding, and [sea-g2p](https://github.com/pnnbao97/sea-g2p) for text normalization and phonemization.
 
 **Made with ❤️ for the Vietnamese TTS community**
