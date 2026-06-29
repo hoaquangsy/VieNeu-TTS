@@ -1,0 +1,641 @@
+{
+  "report": "vieneu_ref_audio_pitch_drift_audit",
+  "createdAt": "2026-06-18T14:05:00+07:00",
+  "repo": "D:\\VieNeu-TTS",
+  "auditOnly": true,
+  "codeChanged": false,
+  "audioPath": "D:\\VieNeu-TTS\\outputs\\api\\full_audit_refaudio_fix_b19_singleproc_20260618133500.wav",
+  "timingsPath": "D:\\VieNeu-TTS\\outputs\\api\\full_audit_refaudio_fix_b19_singleproc_20260618133500.timings.json",
+  "referenceAudioPath": "D:\\VieNeu-TTS\\examples\\audio_ref\\example_ngoc_huyen.wav",
+  "boundaryReconstruction": {
+    "method": "cumulative final chunkAudioQa.durationSeconds plus interChunkSilenceSeconds from timings",
+    "interChunkSilenceSeconds": 0.12,
+    "fullAudioDurationSeconds": 300.68,
+    "reconstructedEndSeconds": 300.68,
+    "differenceSeconds": 0.0
+  },
+  "tooling": {
+    "pitch": "librosa.pyin fmin=70 fmax=450 at 16kHz on edge-trimmed chunk audio",
+    "loudness": "RMS dB proxy on edge-trimmed chunk audio",
+    "voiceSimilarity": "No speaker embedding package installed; MFCC Euclidean distance to reference is reported only as a rough spectral proxy."
+  },
+  "referenceMetrics": {
+    "analysisDurationSeconds": 4.245,
+    "rmsDb": -16.96,
+    "peakDb": -3.77,
+    "voicedFrameCount": 329,
+    "voicedRatio": 0.774,
+    "medianF0Hz": 222.24,
+    "meanF0Hz": 226.42,
+    "p10F0Hz": 177.21,
+    "p90F0Hz": 289.87,
+    "pitchRangeP10P90Hz": 112.67,
+    "f0StdHz": 44.65,
+    "spectralCentroidHz": 1387.57,
+    "spectralBandwidthHz": 1409.55
+  },
+  "globalChunkStats": {
+    "chunkMedianF0Hz": {
+      "median": 227.44,
+      "mad": 11.14,
+      "min": 190.14,
+      "max": 261.25
+    },
+    "chunkPitchRangeHz": {
+      "median": 136.14,
+      "mad": 17.09,
+      "min": 83.44,
+      "max": 262.97
+    },
+    "speakingRateCharsPerSec": {
+      "median": 17.48,
+      "mad": 0.87,
+      "min": 14.75,
+      "max": 19.92
+    },
+    "rmsDb": {
+      "median": -14.91,
+      "mad": 0.68,
+      "min": -17.79,
+      "max": -11.5
+    },
+    "mfccDistanceToRef": {
+      "median": 31.879,
+      "mad": 11.402,
+      "min": 14.391,
+      "max": 84.015
+    }
+  },
+  "suspectChunks": [
+    {
+      "chunkIndex": 21,
+      "startSeconds": 128.84,
+      "endSeconds": 134.6,
+      "score": 3,
+      "flags": [
+        "local_pitch_jump"
+      ],
+      "medianF0Hz": 251.62,
+      "deltaVsGlobalMedianHz": 24.18,
+      "deltaVsLocalMedianHz": 36.29,
+      "pitchRangeHz": 152.76,
+      "rmsDb": -14.41,
+      "speakingRateCharsPerSec": 17.88,
+      "mfccDistanceToRef": 20.295,
+      "retried": false,
+      "retryVariant": null,
+      "batch": {
+        "batchIndex": 1,
+        "batchPosition": 2,
+        "batchJobCount": 19,
+        "batchCharCount": 2016,
+        "maxNewFrames": 190,
+        "refAudioFrameCapApplied": true,
+        "batchRetryChunkIndexes": [
+          36
+        ]
+      },
+      "textPreview": "Nếu bạn đang cân nhắc trú ẩn, khoảnh khắc này nhắc một điều đơn giản: đừng chỉ nhìn quyết định của Fed."
+    },
+    {
+      "chunkIndex": 23,
+      "startSeconds": 137.96,
+      "endSeconds": 142.36,
+      "score": 3,
+      "flags": [
+        "local_pitch_jump"
+      ],
+      "medianF0Hz": 258.25,
+      "deltaVsGlobalMedianHz": 30.81,
+      "deltaVsLocalMedianHz": 35.35,
+      "pitchRangeHz": 172.29,
+      "rmsDb": -14.24,
+      "speakingRateCharsPerSec": 17.73,
+      "mfccDistanceToRef": 29.499,
+      "retried": false,
+      "retryVariant": null,
+      "batch": {
+        "batchIndex": 1,
+        "batchPosition": 4,
+        "batchJobCount": 19,
+        "batchCharCount": 2016,
+        "maxNewFrames": 190,
+        "refAudioFrameCapApplied": true,
+        "batchRetryChunkIndexes": [
+          36
+        ]
+      },
+      "textPreview": "Khi vàng rung lắc, các thị trường khác cũng đang để lộ cùng một nỗi băn khoăn."
+    },
+    {
+      "chunkIndex": 25,
+      "startSeconds": 150.2,
+      "endSeconds": 157.24,
+      "score": 3,
+      "flags": [
+        "local_pitch_jump"
+      ],
+      "medianF0Hz": 202.62,
+      "deltaVsGlobalMedianHz": -24.82,
+      "deltaVsLocalMedianHz": -49.74,
+      "pitchRangeHz": 136.37,
+      "rmsDb": -16.9,
+      "speakingRateCharsPerSec": 17.19,
+      "mfccDistanceToRef": 20.189,
+      "retried": false,
+      "retryVariant": null,
+      "batch": {
+        "batchIndex": 1,
+        "batchPosition": 6,
+        "batchJobCount": 19,
+        "batchCharCount": 2016,
+        "maxNewFrames": 190,
+        "refAudioFrameCapApplied": true,
+        "batchRetryChunkIndexes": [
+          36
+        ]
+      },
+      "textPreview": "Với người cầm vàng, người cầm cổ phiếu, hay người đang vay vốn, cùng một câu chữ lại đẩy họ vào những phép tính rất khác."
+    },
+    {
+      "chunkIndex": 45,
+      "startSeconds": 261.4,
+      "endSeconds": 265.48,
+      "score": 3,
+      "flags": [
+        "local_pitch_jump"
+      ],
+      "medianF0Hz": 261.25,
+      "deltaVsGlobalMedianHz": 33.81,
+      "deltaVsLocalMedianHz": 38.05,
+      "pitchRangeHz": 185.93,
+      "rmsDb": -15.07,
+      "speakingRateCharsPerSec": 15.69,
+      "mfccDistanceToRef": 40.062,
+      "retried": false,
+      "retryVariant": null,
+      "batch": {
+        "batchIndex": 2,
+        "batchPosition": 7,
+        "batchJobCount": 14,
+        "batchCharCount": 1157,
+        "maxNewFrames": 190,
+        "refAudioFrameCapApplied": true,
+        "batchRetryChunkIndexes": []
+      },
+      "textPreview": "Fed giữ nguyên lãi suất là sự kiện. Tín hiệu tăng lại là rủi ro."
+    },
+    {
+      "chunkIndex": 49,
+      "startSeconds": 286.44,
+      "endSeconds": 289.8,
+      "score": 3,
+      "flags": [
+        "local_pitch_jump"
+      ],
+      "medianF0Hz": 190.14,
+      "deltaVsGlobalMedianHz": -37.3,
+      "deltaVsLocalMedianHz": -39.3,
+      "pitchRangeHz": 99.14,
+      "rmsDb": -14.48,
+      "speakingRateCharsPerSec": 18.15,
+      "mfccDistanceToRef": 67.73,
+      "retried": false,
+      "retryVariant": null,
+      "batch": {
+        "batchIndex": 2,
+        "batchPosition": 11,
+        "batchJobCount": 14,
+        "batchCharCount": 1157,
+        "maxNewFrames": 190,
+        "refAudioFrameCapApplied": true,
+        "batchRetryChunkIndexes": []
+      },
+      "textPreview": "Câu hỏi là mình có hiểu vì sao mình đang đứng ở đó hay không."
+    },
+    {
+      "chunkIndex": 12,
+      "startSeconds": 71.2,
+      "endSeconds": 78.56,
+      "score": 2,
+      "flags": [
+        "spectral_mfcc_distance_outlier"
+      ],
+      "medianF0Hz": 230.07,
+      "deltaVsGlobalMedianHz": 2.63,
+      "deltaVsLocalMedianHz": -0.75,
+      "pitchRangeHz": 138.54,
+      "rmsDb": -12.97,
+      "speakingRateCharsPerSec": 18.75,
+      "mfccDistanceToRef": 77.449,
+      "retried": false,
+      "retryVariant": null,
+      "batch": {
+        "batchIndex": 0,
+        "batchPosition": 12,
+        "batchJobCount": 19,
+        "batchCharCount": 1984,
+        "maxNewFrames": 190,
+        "refAudioFrameCapApplied": true,
+        "batchRetryChunkIndexes": [
+          9,
+          17
+        ]
+      },
+      "textPreview": "Fed vẫn thận trọng với lạm phát. Khi lạm phát chưa thật sự hạ nhiệt, khả năng lãi suất cao kéo dài trở thành một bóng mờ đi cùng giá vàng."
+    },
+    {
+      "chunkIndex": 27,
+      "startSeconds": 163.08,
+      "endSeconds": 168.04,
+      "score": 2,
+      "flags": [
+        "spectral_mfcc_distance_outlier"
+      ],
+      "medianF0Hz": 250.9,
+      "deltaVsGlobalMedianHz": 23.46,
+      "deltaVsLocalMedianHz": 23.78,
+      "pitchRangeHz": 183.47,
+      "rmsDb": -13.0,
+      "speakingRateCharsPerSec": 16.94,
+      "mfccDistanceToRef": 84.015,
+      "retried": false,
+      "retryVariant": null,
+      "batch": {
+        "batchIndex": 1,
+        "batchPosition": 8,
+        "batchJobCount": 19,
+        "batchCharCount": 2016,
+        "maxNewFrames": 190,
+        "refAudioFrameCapApplied": true,
+        "batchRetryChunkIndexes": [
+          36
+        ]
+      },
+      "textPreview": "Dow Jones mất hơn năm trăm điểm, còn S and P năm trăm và Nasdaq Composite cũng giảm."
+    },
+    {
+      "chunkIndex": 36,
+      "startSeconds": 218.08,
+      "endSeconds": 227.04,
+      "score": 2,
+      "flags": [
+        "wide_pitch_range",
+        "retried"
+      ],
+      "medianF0Hz": 218.42,
+      "deltaVsGlobalMedianHz": -9.02,
+      "deltaVsLocalMedianHz": -13.24,
+      "pitchRangeHz": 236.31,
+      "rmsDb": -16.52,
+      "speakingRateCharsPerSec": 16.07,
+      "mfccDistanceToRef": 27.755,
+      "retried": true,
+      "retryVariant": {
+        "temperature": 0.65,
+        "top_k": 35,
+        "max_new_frames": 190,
+        "strategy": "ref_audio_retry_sampler_shift_and_frame_cap",
+        "retryIndex": 1
+      },
+      "batch": {
+        "batchIndex": 1,
+        "batchPosition": 17,
+        "batchJobCount": 19,
+        "batchCharCount": 2016,
+        "maxNewFrames": 190,
+        "refAudioFrameCapApplied": true,
+        "batchRetryChunkIndexes": [
+          36
+        ]
+      },
+      "textPreview": "Đà kéo nằm nhiều ở nhóm vốn hóa lớn. Tỷ giá trong nước cũng tạo thêm một lớp khác. Nhiều ngân hàng giảm nhẹ giá đô la Mỹ sau quyết định của Fed."
+    },
+    {
+      "chunkIndex": 18,
+      "startSeconds": 108.88,
+      "endSeconds": 115.52,
+      "score": 1,
+      "flags": [
+        "wide_pitch_range"
+      ],
+      "medianF0Hz": 235.45,
+      "deltaVsGlobalMedianHz": 8.01,
+      "deltaVsLocalMedianHz": 13.58,
+      "pitchRangeHz": 262.97,
+      "rmsDb": -14.62,
+      "speakingRateCharsPerSec": 17.32,
+      "mfccDistanceToRef": 29.725,
+      "retried": false,
+      "retryVariant": null,
+      "batch": {
+        "batchIndex": 0,
+        "batchPosition": 18,
+        "batchJobCount": 19,
+        "batchCharCount": 1984,
+        "maxNewFrames": 190,
+        "refAudioFrameCapApplied": true,
+        "batchRetryChunkIndexes": [
+          9,
+          17
+        ]
+      },
+      "textPreview": "Nói cách khác, vàng không bị đánh bằng một quyết định tăng lãi suất. Nó bị lay bởi khả năng quyết định đó quay lại."
+    }
+  ],
+  "retryCorrelation": {
+    "retriedChunkIndexes": [
+      3,
+      9,
+      17,
+      36
+    ],
+    "suspectRetriedChunkIndexes": [
+      36
+    ],
+    "suspectFirstPassChunkIndexes": [
+      21,
+      23,
+      25,
+      45,
+      49,
+      12,
+      27,
+      18
+    ],
+    "interpretation": "Measured pitch/spectral outliers are not limited to retry chunks if suspectFirstPassChunkIndexes is non-empty. Retry sampler variants remain a plausible risk for retried suspects, but first-pass conditioning/batch/text effects must also be considered."
+  },
+  "correlationFields": {
+    "batchPositionAvailable": true,
+    "retryVariantAvailable": true,
+    "seedAvailableInTimings": false,
+    "referenceCache": {
+      "enabled": true,
+      "refAudioPath": "D:\\VieNeu-TTS\\examples\\audio_ref\\example_ngoc_huyen.wav",
+      "refAudioCache": {
+        "cacheHit": false,
+        "refAudioPath": "D:\\VieNeu-TTS\\examples\\audio_ref\\example_ngoc_huyen.wav",
+        "cacheKey": {
+          "mtimeNs": 1778150258254311500,
+          "sizeBytes": 217166
+        },
+        "encodeMs": 44
+      },
+      "retryStrategy": "sampler_shift_and_frame_cap",
+      "retryMaxNewFramesEnv": "190",
+      "initialBatchUnchanged": true
+    }
+  },
+  "likelyCauses": [
+    "ref_audio conditioning is less stable than fixed built-in preset codes, so chunk-level speaker/prosody drift can appear even without dropout.",
+    "Retry sampler variants can change prosody/voice identity because temperature/top_k are shifted on retry; this is risky for retried chunks, especially when the retry is accepted for silence/volume rather than voice identity.",
+    "Some first-pass chunks may also drift due to stochastic sampling, short chunk length, punctuation/scene boundary micro-merge, or batch padding/composition.",
+    "No evidence in this audit proves CUDA OOM or reference cache reload as the main cause; the final run used stable VRAM and refAudioCache metadata was present."
+  ],
+  "recommendedLowRiskPlan": [
+    "Do not pitch-normalize the whole audio; it may damage natural Vietnamese intonation and speaker identity.",
+    "Add a voice/pitch outlier QA gate before accepting a retry: compare final attempt F0/MFCC/loudness to local neighbors and reference, then prefer the attempt that is both non-silent and closest to local voice identity.",
+    "Constrain retry sampler variation: first retry should make the smallest possible sampler shift and keep top_k closer to default unless the first retry still drops out.",
+    "Record seed/generator state per batch/chunk if available, so a bad chunk can be retried deterministically with a controlled perturbation.",
+    "Consider ref_audio chunk-level QA retry for voice/pitch outliers only, not global normalization: retry just the suspect chunk and choose the best voice-identity candidate.",
+    "Use short crossfades only to hide boundary clicks; do not use crossfade as a fix for sustained pitch/voice drift."
+  ],
+  "chunkMetricsFile": "D:\\VieNeu-TTS\\vieneu-ref-audio-pitch-drift-chunk-metrics.json",
+  "commitCreated": false,
+  "listeningClipsDirectory": "D:\\VieNeu-TTS\\outputs\\api\\pitch_drift_audit_refaudio_b19_singleproc",
+  "listeningClips": [
+    {
+      "chunkIndex": 21,
+      "path": "D:\\VieNeu-TTS\\outputs\\api\\pitch_drift_audit_refaudio_b19_singleproc\\chunk_21_128590ms_134850ms.wav",
+      "startSeconds": 128.84,
+      "endSeconds": 134.6,
+      "flags": [
+        "local_pitch_jump"
+      ],
+      "medianF0Hz": 251.62,
+      "deltaVsLocalMedianHz": 36.29,
+      "retried": false,
+      "textPreview": "Nếu bạn đang cân nhắc trú ẩn, khoảnh khắc này nhắc một điều đơn giản: đừng chỉ nhìn quyết định của Fed."
+    },
+    {
+      "chunkIndex": 23,
+      "path": "D:\\VieNeu-TTS\\outputs\\api\\pitch_drift_audit_refaudio_b19_singleproc\\chunk_23_137710ms_142610ms.wav",
+      "startSeconds": 137.96,
+      "endSeconds": 142.36,
+      "flags": [
+        "local_pitch_jump"
+      ],
+      "medianF0Hz": 258.25,
+      "deltaVsLocalMedianHz": 35.35,
+      "retried": false,
+      "textPreview": "Khi vàng rung lắc, các thị trường khác cũng đang để lộ cùng một nỗi băn khoăn."
+    },
+    {
+      "chunkIndex": 25,
+      "path": "D:\\VieNeu-TTS\\outputs\\api\\pitch_drift_audit_refaudio_b19_singleproc\\chunk_25_149950ms_157490ms.wav",
+      "startSeconds": 150.2,
+      "endSeconds": 157.24,
+      "flags": [
+        "local_pitch_jump"
+      ],
+      "medianF0Hz": 202.62,
+      "deltaVsLocalMedianHz": -49.74,
+      "retried": false,
+      "textPreview": "Với người cầm vàng, người cầm cổ phiếu, hay người đang vay vốn, cùng một câu chữ lại đẩy họ vào những phép tính rất khác."
+    },
+    {
+      "chunkIndex": 45,
+      "path": "D:\\VieNeu-TTS\\outputs\\api\\pitch_drift_audit_refaudio_b19_singleproc\\chunk_45_261149ms_265730ms.wav",
+      "startSeconds": 261.4,
+      "endSeconds": 265.48,
+      "flags": [
+        "local_pitch_jump"
+      ],
+      "medianF0Hz": 261.25,
+      "deltaVsLocalMedianHz": 38.05,
+      "retried": false,
+      "textPreview": "Fed giữ nguyên lãi suất là sự kiện. Tín hiệu tăng lại là rủi ro."
+    },
+    {
+      "chunkIndex": 49,
+      "path": "D:\\VieNeu-TTS\\outputs\\api\\pitch_drift_audit_refaudio_b19_singleproc\\chunk_49_286190ms_290050ms.wav",
+      "startSeconds": 286.44,
+      "endSeconds": 289.8,
+      "flags": [
+        "local_pitch_jump"
+      ],
+      "medianF0Hz": 190.14,
+      "deltaVsLocalMedianHz": -39.3,
+      "retried": false,
+      "textPreview": "Câu hỏi là mình có hiểu vì sao mình đang đứng ở đó hay không."
+    },
+    {
+      "chunkIndex": 12,
+      "path": "D:\\VieNeu-TTS\\outputs\\api\\pitch_drift_audit_refaudio_b19_singleproc\\chunk_12_70950ms_78810ms.wav",
+      "startSeconds": 71.2,
+      "endSeconds": 78.56,
+      "flags": [
+        "spectral_mfcc_distance_outlier"
+      ],
+      "medianF0Hz": 230.07,
+      "deltaVsLocalMedianHz": -0.75,
+      "retried": false,
+      "textPreview": "Fed vẫn thận trọng với lạm phát. Khi lạm phát chưa thật sự hạ nhiệt, khả năng lãi suất cao kéo dài trở thành một bóng mờ đi cùng giá vàng."
+    },
+    {
+      "chunkIndex": 27,
+      "path": "D:\\VieNeu-TTS\\outputs\\api\\pitch_drift_audit_refaudio_b19_singleproc\\chunk_27_162830ms_168290ms.wav",
+      "startSeconds": 163.08,
+      "endSeconds": 168.04,
+      "flags": [
+        "spectral_mfcc_distance_outlier"
+      ],
+      "medianF0Hz": 250.9,
+      "deltaVsLocalMedianHz": 23.78,
+      "retried": false,
+      "textPreview": "Dow Jones mất hơn năm trăm điểm, còn S and P năm trăm và Nasdaq Composite cũng giảm."
+    },
+    {
+      "chunkIndex": 36,
+      "path": "D:\\VieNeu-TTS\\outputs\\api\\pitch_drift_audit_refaudio_b19_singleproc\\chunk_36_217830ms_227290ms.wav",
+      "startSeconds": 218.08,
+      "endSeconds": 227.04,
+      "flags": [
+        "wide_pitch_range",
+        "retried"
+      ],
+      "medianF0Hz": 218.42,
+      "deltaVsLocalMedianHz": -13.24,
+      "retried": true,
+      "textPreview": "Đà kéo nằm nhiều ở nhóm vốn hóa lớn. Tỷ giá trong nước cũng tạo thêm một lớp khác. Nhiều ngân hàng giảm nhẹ giá đô la Mỹ sau quyết định của Fed."
+    },
+    {
+      "chunkIndex": 18,
+      "path": "D:\\VieNeu-TTS\\outputs\\api\\pitch_drift_audit_refaudio_b19_singleproc\\chunk_18_108630ms_115770ms.wav",
+      "startSeconds": 108.88,
+      "endSeconds": 115.52,
+      "flags": [
+        "wide_pitch_range"
+      ],
+      "medianF0Hz": 235.45,
+      "deltaVsLocalMedianHz": 13.58,
+      "retried": false,
+      "textPreview": "Nói cách khác, vàng không bị đánh bằng một quyết định tăng lãi suất. Nó bị lay bởi khả năng quyết định đó quay lại."
+    },
+    {
+      "chunkIndex": 3,
+      "path": "D:\\VieNeu-TTS\\outputs\\api\\pitch_drift_audit_refaudio_b19_singleproc\\chunk_03_15790ms_23410ms.wav",
+      "startSeconds": 16.04,
+      "endSeconds": 23.16,
+      "flags": [
+        "retried"
+      ],
+      "medianF0Hz": 210.98,
+      "deltaVsLocalMedianHz": -15.82,
+      "retried": true,
+      "textPreview": "Vậy điều gì đang xảy ra với giá vàng? Cú chao đảo của vàng bắt đầu từ một điều nghe có vẻ bình thường: Fed giữ nguyên lãi suất."
+    },
+    {
+      "chunkIndex": 9,
+      "path": "D:\\VieNeu-TTS\\outputs\\api\\pitch_drift_audit_refaudio_b19_singleproc\\chunk_09_51230ms_57650ms.wav",
+      "startSeconds": 51.48,
+      "endSeconds": 57.4,
+      "flags": [
+        "retried"
+      ],
+      "medianF0Hz": 248.01,
+      "deltaVsLocalMedianHz": 21.65,
+      "retried": true,
+      "textPreview": "Chiều bán ra là một trăm năm mươi mốt phẩy ba triệu đồng một lượng. Con số này không tự nó kể hết câu chuyện."
+    },
+    {
+      "chunkIndex": 17,
+      "path": "D:\\VieNeu-TTS\\outputs\\api\\pitch_drift_audit_refaudio_b19_singleproc\\chunk_17_102830ms_109010ms.wav",
+      "startSeconds": 103.08,
+      "endSeconds": 108.76,
+      "flags": [
+        "retried"
+      ],
+      "medianF0Hz": 232.75,
+      "deltaVsLocalMedianHz": 6.44,
+      "retried": true,
+      "textPreview": "Người đứng ngoài thì bớt vội. Người vừa mua lại bắt đầu so sánh mình với người chờ thêm một ngày."
+    }
+  ],
+  "correlationSummary": {
+    "retriedVsFirstPass": {
+      "retried": {
+        "count": 4,
+        "medianF0Hz": 225.58,
+        "medianPitchRangeHz": 126.83,
+        "medianRmsDb": -15.75,
+        "medianSpeakingRateCharsPerSec": 17.46,
+        "medianMfccDistanceToRef": 26.48
+      },
+      "firstPass": {
+        "count": 48,
+        "medianF0Hz": 227.44,
+        "medianPitchRangeHz": 137.39,
+        "medianRmsDb": -14.9,
+        "medianSpeakingRateCharsPerSec": 17.48,
+        "medianMfccDistanceToRef": 32.31
+      },
+      "retriedChunkIndexes": [
+        3,
+        9,
+        17,
+        36
+      ],
+      "strongSuspectsAmongRetried": [],
+      "strongSuspectsAmongFirstPass": [
+        21,
+        23,
+        25,
+        45,
+        49
+      ]
+    },
+    "byBatch": {
+      "0": {
+        "count": 19,
+        "medianF0Hz": 230.07,
+        "medianPitchRangeHz": 138.54,
+        "medianRmsDb": -14.9,
+        "medianSpeakingRateCharsPerSec": 17.57,
+        "medianMfccDistanceToRef": 30.32,
+        "suspectChunkIndexes": [
+          12,
+          18
+        ]
+      },
+      "1": {
+        "count": 19,
+        "medianF0Hz": 236.81,
+        "medianPitchRangeHz": 138.78,
+        "medianRmsDb": -15.19,
+        "medianSpeakingRateCharsPerSec": 17.25,
+        "medianMfccDistanceToRef": 30.36,
+        "suspectChunkIndexes": [
+          21,
+          23,
+          25,
+          27,
+          36
+        ]
+      },
+      "2": {
+        "count": 14,
+        "medianF0Hz": 224.18,
+        "medianPitchRangeHz": 129.47,
+        "medianRmsDb": -14.82,
+        "medianSpeakingRateCharsPerSec": 18.07,
+        "medianMfccDistanceToRef": 47.23,
+        "suspectChunkIndexes": [
+          45,
+          49
+        ]
+      }
+    },
+    "finding": "Strong measured local pitch jumps are mostly first-pass chunks, not retry chunks. Retry chunk 36 is notable for wide pitch range, but median-F0 drift is also present without retry, so a retry-only fix would be incomplete."
+  }
+}

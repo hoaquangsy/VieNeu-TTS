@@ -1,0 +1,197 @@
+{
+  "report": "vieneu_ref_audio_dropout_retry_fix",
+  "createdAt": "2026-06-18T13:45:00+07:00",
+  "repo": "D:\\VieNeu-TTS",
+  "scope": {
+    "touchedAutoNews": false,
+    "touchedStage4": false,
+    "commitCreated": false,
+    "runtimeCodeFilesChangedByThisTask": ["D:\\VieNeu-TTS\\apps\\voice_clone_api.py"],
+    "reportFile": "D:\\VieNeu-TTS\\vieneu-ref-audio-dropout-retry-fix-report.json"
+  },
+  "inputCase": {
+    "sourceRequestId": "autovid_20260618120044_9faff6ce914d",
+    "sourceTimings": "D:\\VieNeu-TTS\\outputs\\api\\full_autovid_20260618120044_9faff6ce914d.timings.json",
+    "segmentsFile": "D:\\VieNeu-TTS\\audit_refaudio_segments.json",
+    "segmentCount": 20,
+    "textWords": 1149,
+    "textChars": 5189,
+    "voiceType": "ref_audio",
+    "voice": "Nguyễn Huyền Trang",
+    "refAudio": "examples/audio_ref/example_ngoc_huyen.wav",
+    "resolvedRefAudio": "D:\\VieNeu-TTS\\examples\\audio_ref\\example_ngoc_huyen.wav",
+    "model": "vieneu-v3-turbo-gpu",
+    "mode": "v3_turbo_gpu",
+    "device": "cuda",
+    "timelineMode": "full_then_align",
+    "chunkCount": 52
+  },
+  "rootCause": {
+    "primary": "v3 ref_audio synthesis can stochastically generate long near-silent audio for individual chunks. The previous retry path repeated essentially the same generation configuration, so some retries reproduced the same 18-24 second silence and created very large retry overhead.",
+    "contributingFactors": [
+      "The v3 batch path used a 300-frame decode cap for every first attempt. Broken ref_audio rows could run near the full cap and return 15-24 seconds of mostly silence.",
+      "Retry attempts were per chunk, not whole batch, but they reused the same sampler/config for ref_audio and could fail repeatedly.",
+      "Reference audio encoding was not safely cached in the Voice API resolve path, so repeated requests/retries could redo reference preprocessing.",
+      "The issue is not AutoNews, not Whisper alignment, and not batch-size persistence. Batch 19 was received by the backend. Built-in voices are much less affected, but severe silent attempts can still happen stochastically and are still caught by existing QA."
+    ],
+    "notRootCause": ["AutoNews pipeline overhead", "Whisper alignment causing TTS silence", "Fallback to v2", "Batch size UI not persisted", "Retrying whole batches"]
+  },
+  "codeChanges": [
+    {"file": "D:\\VieNeu-TTS\\apps\\voice_clone_api.py", "lines": "146, 1060-1087", "change": "Added a ref_audio reference-code cache keyed by resolved path, mtime_ns, and file size. The resolved voice now carries refAudioCache metadata."},
+    {"file": "D:\\VieNeu-TTS\\apps\\voice_clone_api.py", "lines": "1093-1155, 1486-1551, 1850, 2156", "change": "Added ref_audio retry variants. Silence/volume retries for ref_audio now shift sampler parameters and apply a text-based max_new_frames cap instead of repeating the identical failed configuration."},
+    {"file": "D:\\VieNeu-TTS\\apps\\voice_clone_api.py", "lines": "1103-1106, 2059-2085, 2222", "change": "Applied a ref_audio-specific frame cap to v3 batch generation and reported maxNewFrames/refAudioFrameCapApplied/refAudioOptimization in timings. Built-in preset voices keep the existing 300-frame first-pass cap."}
+  ],
+  "behaviorKept": {
+    "noV2Fallback": true,
+    "noBatchDefaultChange": true,
+    "defaultBatchSizeStill": 19,
+    "samplerDefaultKept": {"temperature": 0.4, "topK": 50},
+    "chunkPackingDefaultKept": "legacy",
+    "whisperAlignmentKept": true,
+    "dropoutQaKept": true,
+    "volumeOutlierQaKept": true,
+    "retryWholeBatch": false
+  },
+  "before": {
+    "requestId": "autovid_20260618120044_9faff6ce914d",
+    "audioDurationSeconds": 302.12,
+    "totalMs": 563077,
+    "ttsSynthMs": 448967,
+    "whisperAlignMs": 113406,
+    "chunkCount": 52,
+    "v3BatchSize": 19,
+    "retryCount": 11,
+    "estimatedRetryOverheadMs": 258000,
+    "invalidCount": 0,
+    "finalHardDropoutCount": 0,
+    "finalSevereDropoutCount": 0,
+    "detectedHardDropoutCount": 1,
+    "detectedSevereDropoutCount": 9,
+    "retryDueToSilenceCount": 5,
+    "volumeOutlierRetries": 1,
+    "problemAttempts": [
+      {"charCount": 70, "attemptDurationsSeconds": [24.0, 24.0, 3.84, 4.8], "firstLongestSilenceSeconds": 21.737, "worstLongestSilenceSeconds": 21.737},
+      {"charCount": 77, "attemptDurationsSeconds": [24.0, 4.56], "firstLongestSilenceSeconds": 22.445, "worstLongestSilenceSeconds": 22.445},
+      {"charCount": 109, "attemptDurationsSeconds": [24.0, 24.0, 24.0, 5.92], "firstLongestSilenceSeconds": 20.948, "worstLongestSilenceSeconds": 21.029},
+      {"charCount": 97, "attemptDurationsSeconds": [13.44, 5.28], "firstLongestSilenceSeconds": 8.579, "worstLongestSilenceSeconds": 8.579},
+      {"charCount": 144, "attemptDurationsSeconds": [24.0, 24.0, 24.0, 8.08], "firstLongestSilenceSeconds": 18.799, "worstLongestSilenceSeconds": 19.713}
+    ]
+  },
+  "afterBenchmarks": {
+    "batchMatrix": [
+      {"batchSize": 12, "requestId": "audit_refaudio_fix_b12_20260618130810", "audioDurationSeconds": 301.32, "totalMs": 173846, "ttsSynthMs": 77673, "whisperAlignMs": 42738, "modelLoadVoiceMs": 49744, "retryCount": 4, "invalidCount": 0, "maxSilenceSeconds": 0.695, "finalHardDropoutCount": 0, "finalSevereDropoutCount": 0, "refAudioCacheHit": false, "audioPath": "D:\\VieNeu-TTS\\outputs\\api\\full_audit_refaudio_fix_b12_20260618130810.wav", "timingsPath": "D:\\VieNeu-TTS\\outputs\\api\\full_audit_refaudio_fix_b12_20260618130810.timings.json"},
+      {"batchSize": 16, "requestId": "audit_refaudio_fix_b16_20260618131104", "audioDurationSeconds": 306.84, "totalMs": 110403, "ttsSynthMs": 63915, "whisperAlignMs": 46120, "modelLoadVoiceMs": 0, "retryCount": 3, "invalidCount": 0, "maxSilenceSeconds": 0.711, "finalHardDropoutCount": 0, "finalSevereDropoutCount": 0, "refAudioCacheHit": true, "audioPath": "D:\\VieNeu-TTS\\outputs\\api\\full_audit_refaudio_fix_b16_20260618131104.wav", "timingsPath": "D:\\VieNeu-TTS\\outputs\\api\\full_audit_refaudio_fix_b16_20260618131104.timings.json"},
+      {"batchSize": 19, "requestId": "audit_refaudio_fix_b19_20260618131254", "audioDurationSeconds": 302.44, "totalMs": 96734, "ttsSynthMs": 52286, "whisperAlignMs": 44088, "modelLoadVoiceMs": 0, "retryCount": 2, "invalidCount": 0, "maxSilenceSeconds": 0.851, "finalHardDropoutCount": 0, "finalSevereDropoutCount": 0, "refAudioCacheHit": true, "audioPath": "D:\\VieNeu-TTS\\outputs\\api\\full_audit_refaudio_fix_b19_20260618131254.wav", "timingsPath": "D:\\VieNeu-TTS\\outputs\\api\\full_audit_refaudio_fix_b19_20260618131254.timings.json"}
+    ],
+    "singleProcessConfirmation": {
+      "requestId": "audit_refaudio_fix_b19_singleproc_20260618133500",
+      "batchSize": 19,
+      "audioDurationSeconds": 300.68,
+      "totalMs": 106158,
+      "ttsSynthMs": 61865,
+      "whisperAlignMs": 43872,
+      "modelLoadVoiceMs": 44,
+      "retryCount": 4,
+      "retryMs": 17841,
+      "invalidCount": 0,
+      "maxSilenceSeconds": 1.263,
+      "softPauseCount": 1,
+      "hardDropoutCount": 0,
+      "severeDropoutCount": 3,
+      "finalHardDropoutCount": 0,
+      "finalSevereDropoutCount": 0,
+      "retryDueToSilenceCount": 3,
+      "volumeOutlierCount": 0,
+      "retriedVolumeOutlierCount": 1,
+      "refAudioCacheHit": false,
+      "refAudioEncodeMs": 44,
+      "firstAttemptBatchMs": [17265, 17155, 8952],
+      "batchRetryMs": [7474, 5785, 0],
+      "volumeRetryMs": [4582, 0, 0],
+      "maxNewFrames": [190, 190, 190],
+      "audioPath": "D:\\VieNeu-TTS\\outputs\\api\\full_audit_refaudio_fix_b19_singleproc_20260618133500.wav",
+      "timingsPath": "D:\\VieNeu-TTS\\outputs\\api\\full_audit_refaudio_fix_b19_singleproc_20260618133500.timings.json"
+    }
+  },
+  "afterVsBefore": {
+    "batch19BestAfterTtsMs": 52286,
+    "batch19SingleProcessTtsMs": 61865,
+    "beforeTtsMs": 448967,
+    "ttsSpeedupBest": 8.59,
+    "ttsSpeedupSingleProcess": 7.26,
+    "beforeTotalMs": 563077,
+    "afterTotalMsSingleProcess": 106158,
+    "totalSpeedupSingleProcess": 5.30,
+    "retryCountBefore": 11,
+    "retryCountAfterSingleProcess": 4,
+    "retryReduction": "11 -> 4",
+    "finalSevereDropoutBefore": 0,
+    "finalSevereDropoutAfter": 0
+  },
+  "retryStrategyAfter": {
+    "firstPassSamplerChanged": false,
+    "firstPassRefAudioFrameCapApplied": true,
+    "retrySamplerChangedForRefAudio": true,
+    "retryVariantExample": {"temperature": 0.65, "top_k": 35, "strategy": "ref_audio_retry_sampler_shift_and_frame_cap"},
+    "frameCap": {"env": "VIE_TTS_REF_AUDIO_RETRY_MAX_NEW_FRAMES", "default": 190, "formula": "ceil(max(48, char_count * 1.25 + 24)), clamped by env/request", "observedRetryMaxNewFrames": [146, 161, 183, 190]}
+  },
+  "gpuAndProcessEvidence": {
+    "singleVoiceApiProcessForFinalBenchmark": true,
+    "voiceApiPort": 8002,
+    "gpu": "NVIDIA GeForce RTX 4050 Laptop GPU, 6141 MB",
+    "singleProcessRefAudioGpuBefore": "6141 total, 3347 used, 2587 free, 0% util",
+    "singleProcessRefAudioGpuAfter": "6141 total, 3349 used, 2585 free, 15% util",
+    "notes": ["An extra non-listening Voice API process was found and stopped before the final single-process ref_audio confirmation.", "GPU memory stayed stable during final benchmark; no evidence of CUDA OOM or paging was observed in the captured timings."]
+  },
+  "builtinRegression": {
+    "voice": "Thời sự nữ",
+    "requestId": "audit_builtin_regression_thoisunu_20260618133000",
+    "audioDurationSeconds": 309.72,
+    "totalMs": 115235,
+    "ttsSynthMs": 70891,
+    "whisperAlignMs": 43060,
+    "chunkCount": 52,
+    "retryCount": 2,
+    "invalidCount": 0,
+    "maxSilenceSeconds": 2.076,
+    "softPauseCount": 2,
+    "hardDropoutCount": 0,
+    "severeDropoutCount": 1,
+    "finalHardDropoutCount": 0,
+    "finalSevereDropoutCount": 0,
+    "volumeOutlierCount": 0,
+    "frameCapApplied": false,
+    "audioPath": "D:\\VieNeu-TTS\\outputs\\api\\full_audit_builtin_regression_thoisunu_20260618133000.wav",
+    "timingsPath": "D:\\VieNeu-TTS\\outputs\\api\\full_audit_builtin_regression_thoisunu_20260618133000.timings.json",
+    "interpretation": "Built-in final QA passed and did not use the ref_audio-specific cap. This run still had one severe silent attempt that existing QA retried successfully, so there is no final-audio regression, but stochastic severe attempts are not exclusive to ref_audio."
+  },
+  "passCriteria": {
+    "noFinalSevereDropout": true,
+    "audioContentNotDroppedByQa": true,
+    "retryReducedClearly": true,
+    "refAudioNoLongRetryExplosion": true,
+    "builtInNoFinalDropoutRegression": true,
+    "needsUserListeningBeforeCommit": true
+  },
+  "recommendedBatchConfig": {
+    "recommendation": "Keep default v3BatchSize at 19 for now.",
+    "reason": "Among tested ref_audio runs, batch 19 was fastest after the fix and passed final QA. The user explicitly asked not to change the default without evidence, and evidence does not justify lowering it."
+  },
+  "remainingRisks": [
+    "TTS is stochastic; occasional severe first attempts may still occur, but retry overhead is now bounded much better for ref_audio.",
+    "Built-in regression on this exact script had one severe first attempt, though final audio passed. If this becomes frequent, built-in retry strategy could be audited separately.",
+    "User still needs to listen to the generated ref_audio WAV before commit, per instruction."
+  ],
+  "artifactsForListening": [
+    "D:\\VieNeu-TTS\\outputs\\api\\full_audit_refaudio_fix_b19_singleproc_20260618133500.wav",
+    "D:\\VieNeu-TTS\\outputs\\api\\full_audit_refaudio_fix_b19_20260618131254.wav",
+    "D:\\VieNeu-TTS\\outputs\\api\\full_audit_builtin_regression_thoisunu_20260618133000.wav"
+  ],
+  "checks": {
+    "pyCompile": {"command": "python -m py_compile apps\\voice_clone_api.py", "status": "passed"},
+    "pytestUtils": {"command": "D:\\VieNeu-TTS\\.venv\\Scripts\\python.exe -m pytest tests\\test_utils.py -q", "status": "passed", "output": "14 passed in 0.54s"},
+    "pipCheck": {"command": "D:\\\\VieNeu-TTS\\\\.venv\\\\Scripts\\\\python.exe -m pip check", "status": "failed_existing_dependency_conflict", "output": "torchaudio 2.8.0+cu128 has requirement torch==2.8.0+cu128, but you have torch 2.11.0+cu128.", "note": "Dependency conflict appears pre-existing; this task did not change packages."}
+  },
+  "gitStatusNote": "Worktree was dirty before this task. This task intentionally modified apps/voice_clone_api.py and generated benchmark/report artifacts; nothing was staged or committed."
+}
+
