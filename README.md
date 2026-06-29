@@ -40,6 +40,62 @@
 
 [<img width="600" height="595" alt="VieNeu-TTS Demo" src="https://github.com/user-attachments/assets/021f6671-2d7f-4635-91fb-88b2ab0ddbcd" />](https://github.com/user-attachments/assets/021f6671-2d7f-4635-91fb-88b2ab0ddbcd)
 
+## Local Voice API Checkpoint
+
+This workspace also includes a local Voice API used by AutoVid:
+
+```text
+Voice Clone API: http://127.0.0.1:8002
+Endpoint:        POST /synthesize-aligned
+Default model:   vieneu-v2-cpu
+Mode:            standard
+Timeline mode:   full_then_align
+```
+
+Current aligned TTS behavior:
+
+```text
+Receives many AutoVid segments.
+Builds one full narration text.
+Uses sentence-aware chunking without changing text.
+Synthesizes one full WAV.
+Runs Whisper alignment for segment timings.
+Writes deterministic artifacts by request_id:
+  D:\VieNeu-TTS\outputs\api\full_<request_id>.wav
+  D:\VieNeu-TTS\outputs\api\full_<request_id>.txt
+  D:\VieNeu-TTS\outputs\api\full_<request_id>.timings.json
+```
+
+Current stability decisions:
+
+```text
+No alias/rewrite text.
+No pronunciation verifier fail path.
+No audio patching.
+No scene-level output.
+No chunk_align full mode.
+No chunk concurrency > 1 for standard GGUF.
+VIE_TTS_CHUNK_CONCURRENCY=1 is the safe default.
+```
+
+Performance checkpoint:
+
+```text
+TTS synth is the main bottleneck.
+Whisper alignment is the secondary bottleneck.
+Concat/export and chunking are not meaningful bottlenecks.
+Thread tuning is optional and machine-specific; do not hard-code defaults.
+Recommended stable env:
+  VIE_TTS_CHUNK_CONCURRENCY=1
+  VIE_TTS_ALIGNMENT_MODEL=base
+  VIE_TTS_ALIGNMENT_COMPUTE_TYPE=int8
+Optional tested tuning on this machine:
+  VIE_TTS_CPU_THREADS=8
+  VIE_TTS_ALIGNMENT_CPU_THREADS=8
+```
+
+Full current checkpoint, profiling fields, benchmark numbers, and artifact examples are documented in [`VOICE_CLONE_API.md`](VOICE_CLONE_API.md).
+
 ## 📌 Table of Contents
 
 1. [🦜 Installation & Web UI](#installation)

@@ -1,6 +1,7 @@
 import numpy as np
 import re
 import logging
+import os
 from typing import List, Dict, Optional, Any
 
 # Configure logging
@@ -128,6 +129,19 @@ class NeuCodecOnnx:
         # Load model
         so = onnxruntime.SessionOptions()
         so.graph_optimization_level = onnxruntime.GraphOptimizationLevel.ORT_ENABLE_ALL
+        cpu_threads = os.getenv("VIE_TTS_CPU_THREADS")
+        if cpu_threads and cpu_threads.strip().lower() != "auto":
+            try:
+                thread_count = int(cpu_threads)
+                if thread_count > 0:
+                    so.intra_op_num_threads = thread_count
+                    so.inter_op_num_threads = max(1, min(2, thread_count))
+            except ValueError:
+                pass
+        elif cpu_threads and cpu_threads.strip().lower() == "auto":
+            thread_count = os.cpu_count() or 1
+            so.intra_op_num_threads = thread_count
+            so.inter_op_num_threads = max(1, min(2, thread_count))
         
         # Determine providers
         # Default to CPU for now as requested for 'lightweight'

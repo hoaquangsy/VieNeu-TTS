@@ -218,7 +218,8 @@ def _split_sentence(sent: str, max_chunk_size: int) -> List[PhoneChunk]:
     last_idx = len(sub_chunks) - 1
     return [
         PhoneChunk(
-            text=chunk + (punct if i == last_idx else '.'),
+            # Keep mid-sentence splits soft so the model does not treat them as full stops.
+            text=chunk + (punct if i == last_idx else ','),
             is_sentence_end=(i == last_idx),
         )
         for i, chunk in enumerate(sub_chunks)

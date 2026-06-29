@@ -19,6 +19,12 @@ from vieneu_utils.core_utils import split_text_into_chunks, join_audio_chunks
 logger = logging.getLogger("Vieneu.V3Turbo")
 
 
+def _coerce_v3_ref_codes(codes: Any) -> np.ndarray:
+    arr = np.asarray(codes, dtype=np.int64)
+    if arr.ndim == 1 and arr.size % 16 == 0:
+        arr = arr.reshape((-1, 16))
+    return arr
+
 class V3TurboVieNeuTTS(BaseVieneuTTS):
     """VieNeu-TTS v3 Turbo (PyTorch)"""
 
@@ -37,6 +43,7 @@ class V3TurboVieNeuTTS(BaseVieneuTTS):
         # KHÔNG truyền codec_repo → bỏ qua NeuCodec của base; v3 có codec MOSS riêng.
         super().__init__()
         self.sample_rate = 48_000  # v3 = 48 kHz (ghi đè 24 kHz của base)
+        hf_token = (str(hf_token).strip() if hf_token is not None else "") or None
 
         # Pick engine by device: CPU → torch-free ONNX engine (fast + light), GPU →
         # PyTorch. Device is resolved WITHOUT hard-requiring torch, so a torch-free
@@ -69,6 +76,7 @@ class V3TurboVieNeuTTS(BaseVieneuTTS):
                 moss_tokenizer_path=moss_tokenizer,
                 device=device,
                 dtype=dtype,
+                hf_token=hf_token,
             )
             self.backend = "pytorch"
         logger.info(f"✅ VieNeu-TTS v3 Turbo ready (backend={self.backend})")
@@ -109,8 +117,10 @@ class V3TurboVieNeuTTS(BaseVieneuTTS):
         Format matches the base API: label = description (falls back to the name),
         value = the voice name used by :meth:`get_preset_voice`.
         """
-        return [(f"{n} — {v['description']}" if v["description"] else n, n)
-                for n, v in self._preset_voices.items()]
+        return [
+            (f"{n} — {v.get('description', '')}" if v.get("description") else n, n)
+            for n, v in self._preset_voices.items()
+        ]
 
     def get_preset_voice(self, voice_name: Optional[str] = None) -> dict:
         """Return ``{"codes", "reserved_id", "text"}`` for a built-in default voice.
@@ -123,12 +133,24 @@ class V3TurboVieNeuTTS(BaseVieneuTTS):
         if name not in self._preset_voices:
             raise ValueError(f"Voice '{name}' not found. Available: {list(self._preset_voices)}")
         v = self._preset_voices[name]
-        return {"codes": v["codes"], "reserved_id": v.get("reserved_id"), "text": ""}
+        if v.get("codes") is not None:
+            codes = _coerce_v3_ref_codes(v["codes"])
+        elif v.get("ref_audio") or v.get("refAudioPath"):
+            codes = self.encode_reference(v.get("ref_audio") or v.get("refAudioPath"))
+        else:
+            raise ValueError(f"Voice '{name}' has no v3 codes or ref_audio.")
+        return {"codes": codes, "reserved_id": v.get("reserved_id"), "text": v.get("text", "")}
 
     # ── Reference voice (clone from ref audio / codes, or a preset by name) ──
     def encode_reference(self, ref_audio: Union[str, Path]) -> np.ndarray:
         """Encode a reference wav into MOSS ref codes ``(T, n_vq)``."""
-        return self.engine._encode_ref(str(ref_audio))
+        ref_path = Path(ref_audio)
+        if not ref_path.is_absolute() and not ref_path.exists():
+            repo_root = Path(__file__).resolve().parents[2]
+            candidate = repo_root / ref_path
+            if candidate.exists():
+                ref_path = candidate
+        return self.engine._encode_ref(str(ref_path))
 
     def _preset_codes(self, name: str) -> np.ndarray:
         if name not in self._preset_voices:
@@ -147,20 +169,29 @@ class V3TurboVieNeuTTS(BaseVieneuTTS):
         -> default preset.
         """
         if ref_codes is not None:
-            return np.asarray(ref_codes), None
+            return _coerce_v3_ref_codes(ref_codes), None
         if ref_audio is not None:
             return self.encode_reference(ref_audio), None
         if isinstance(voice, str):
             v = self._preset_voices.get(voice)
             if v is None:
                 raise ValueError(f"Voice '{voice}' not found. Available: {list(self._preset_voices)}")
-            return v["codes"], v.get("reserved_id")
+            if v.get("codes") is not None:
+                return _coerce_v3_ref_codes(v["codes"]), v.get("reserved_id")
+            if v.get("ref_audio") or v.get("refAudioPath"):
+                return self.encode_reference(v.get("ref_audio") or v.get("refAudioPath")), None
+            raise ValueError(f"Voice '{voice}' has no v3 codes or ref_audio.")
         if isinstance(voice, dict) and voice.get("codes") is not None:
             tok = voice.get("reserved_id")
-            return np.asarray(voice["codes"]), (int(tok) if tok is not None else None)
+            return _coerce_v3_ref_codes(voice["codes"]), (int(tok) if tok is not None else None)
+        if isinstance(voice, dict) and (voice.get("ref_audio") or voice.get("refAudioPath")):
+            return self.encode_reference(voice.get("ref_audio") or voice.get("refAudioPath")), None
         if self._default_voice:
             v = self._preset_voices[self._default_voice]
-            return v["codes"], v.get("reserved_id")
+            if v.get("codes") is not None:
+                return _coerce_v3_ref_codes(v["codes"]), v.get("reserved_id")
+            if v.get("ref_audio") or v.get("refAudioPath"):
+                return self.encode_reference(v.get("ref_audio") or v.get("refAudioPath")), None
         raise ValueError("Provide a preset `voice` name, `ref_audio`, or `ref_codes`.")
 
     # ── Public API ───────────────────────────────────────────────────────────

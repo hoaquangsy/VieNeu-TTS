@@ -1,7 +1,13 @@
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
 import numpy as np
 import pytest
 from vieneu.utils import _linear_overlap_add, extract_speech_ids
-from vieneu_utils.core_utils import split_text_into_chunks, join_audio_chunks
+from vieneu_utils.core_utils import split_text_into_chunks, split_into_chunks_v2, join_audio_chunks
+from apps.voice_clone_api import _build_sentence_aware_chunk_plan, _chunk_audio_qa
 
 # --- Text Utils Tests ---
 
@@ -18,6 +24,15 @@ def test_split_text_paragraphs():
     assert len(chunks) == 2
     assert "Đoạn 1" in chunks[0]
     assert "Đoạn 2" in chunks[1]
+
+def test_split_into_chunks_v2_uses_soft_continuations_for_long_sentences():
+    text = "Đây là một câu dài cần được chia nhỏ để kiểm tra hành vi cắt câu, tránh dấu kết thúc giữa chừng và không gây ngắt mạnh ở các đoạn giữa."
+    chunks = split_into_chunks_v2(text, max_chunk_size=40, min_chunk_size=8)
+    assert len(chunks) > 1
+    for chunk in chunks[:-1]:
+        assert not chunk.is_sentence_end
+        assert chunk.text.endswith(",")
+    assert chunks[-1].is_sentence_end
 
 # --- Audio Utils Tests ---
 
@@ -79,3 +94,40 @@ def test_extract_speech_ids():
     assert extract_speech_ids(codes_str) == [100, 101, 102]
     assert extract_speech_ids("no speech here") == []
     assert extract_speech_ids("<|speech_abc|>") == []
+
+def test_v3_chunk_plan_merges_micro_sentences():
+    plan = _build_sentence_aware_chunk_plan(
+        [
+            {
+                "id": "intro",
+                "text": (
+                    "Các bạn thử nghĩ. "
+                    "Điều đáng sợ là chuyện này không đến bằng tiếng nổ. "
+                    "Nghe thì đơn giản. "
+                    "Nó chỉ giống như thêm một công cụ vào công việc."
+                ),
+            }
+        ],
+        requested_max_chars=220,
+        min_chunk_chars=40,
+        max_chunk_chars=220,
+    )
+    chunks = plan["ttsChunks"]
+    assert "Các bạn thử nghĩ." not in chunks
+    assert "Nghe thì đơn giản." not in chunks
+    assert chunks[0] == "Các bạn thử nghĩ. Điều đáng sợ là chuyện này không đến bằng tiếng nổ."
+    assert chunks[1] == "Nghe thì đơn giản. Nó chỉ giống như thêm một công cụ vào công việc."
+    assert all(len(chunk) <= 220 for chunk in chunks)
+
+def test_v3_chunk_audio_qa_rejects_silent_micro_chunk():
+    audio = np.zeros(48000 * 8, dtype=np.float32)
+    qa = _chunk_audio_qa(audio, 48000, "Nghe thì đơn giản.")
+    assert qa["valid"] is False
+    assert qa["reason"] == "suspected_silent_chunk"
+    assert qa["longestSilenceSeconds"] >= 8.0
+
+def test_v3_chunk_audio_qa_accepts_non_silent_chunk():
+    samples = np.linspace(0, 1, 48000, dtype=np.float32)
+    audio = 0.2 * np.sin(2 * np.pi * 220 * samples).astype(np.float32)
+    qa = _chunk_audio_qa(audio, 48000, "Nghe thì đơn giản. Nó chỉ giống như thêm một công cụ vào công việc.")
+    assert qa["valid"] is True

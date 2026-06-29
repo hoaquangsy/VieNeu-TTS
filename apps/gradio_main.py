@@ -20,6 +20,9 @@ import queue
 import threading
 import yaml
 import uuid
+import json
+import re
+import shutil
 from vieneu_utils.core_utils import split_text_into_chunks, join_audio_chunks, env_bool, get_silence_duration_v2
 from vieneu_utils.phonemize_text import phonemize_to_chunks
 from sea_g2p import Normalizer
@@ -46,6 +49,8 @@ from apps.ui_constants import (
 
 # --- CONSTANTS & CONFIG ---
 CONFIG_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config.yaml")
+USER_VOICES_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "user_voices.json")
+USER_VOICE_REFS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "user_voice_refs")
 try:
     with open(CONFIG_PATH, "r", encoding="utf-8") as f:
         _config = yaml.safe_load(f) or {}
@@ -62,6 +67,13 @@ try:
     HAS_GPU = torch.cuda.is_available() or (sys.platform == "darwin" and torch.backends.mps.is_available())
 except ImportError:
     pass
+
+def has_lmdeploy() -> bool:
+    try:
+        import importlib.util
+        return importlib.util.find_spec("lmdeploy") is not None
+    except Exception:
+        return False
 
 filtered_backbones = {}
 
@@ -123,12 +135,264 @@ current_backbone = None
 current_codec = None
 model_loaded = False
 using_lmdeploy = False
+current_model_key = None
 PRESET_VOICES_CACHE = []  # List of all voices (tuples or strings)
 CONV_VOICES_CACHE = []    # Filtered list for conversation (podcast=True)
 MAX_SPEAKERS = 8          # Max concurrent speakers in conversation tab
 
 # Normalizer (module-level singleton)
 _text_normalizer = Normalizer()
+
+def _voice_codes_to_list(codes):
+    if codes is None:
+        return []
+    if isinstance(codes, list):
+        return codes
+    if isinstance(codes, np.ndarray):
+        return codes.tolist()
+    try:
+        import torch
+        if isinstance(codes, torch.Tensor):
+            return codes.detach().cpu().tolist()
+    except Exception:
+        pass
+    if hasattr(codes, "tolist"):
+        data = codes.tolist()
+        return data if isinstance(data, list) else [data]
+    return list(codes)
+
+def _safe_voice_id(name: str) -> str:
+    value = re.sub(r"[^\w\s-]+", "", str(name or "").strip(), flags=re.UNICODE)
+    value = re.sub(r"\s+", " ", value).strip()
+    return value or f"Voice_{uuid.uuid4().hex[:8]}"
+
+def _repo_relative_path(path: str) -> str:
+    root = os.path.dirname(os.path.dirname(__file__))
+    try:
+        return os.path.relpath(os.path.abspath(path), root).replace("\\", "/")
+    except Exception:
+        return str(path).replace("\\", "/")
+
+def _resolve_repo_path(path: str | None) -> str:
+    value = str(path or "").strip()
+    if not value:
+        return ""
+    if os.path.isabs(value):
+        return value
+    return os.path.join(os.path.dirname(os.path.dirname(__file__)), value)
+
+def _persist_user_ref_audio(voice_id: str, source_audio: str) -> str:
+    if not source_audio or not os.path.exists(source_audio):
+        return ""
+    os.makedirs(USER_VOICE_REFS_DIR, exist_ok=True)
+    ext = os.path.splitext(source_audio)[1].lower() or ".wav"
+    safe_filename = re.sub(r"[^\w\s-]+", "", voice_id, flags=re.UNICODE).strip() or uuid.uuid4().hex[:8]
+    safe_filename = re.sub(r"\s+", "_", safe_filename)
+    dest = os.path.join(USER_VOICE_REFS_DIR, f"{safe_filename}{ext}")
+    if os.path.abspath(source_audio) != os.path.abspath(dest):
+        shutil.copy2(source_audio, dest)
+    return _repo_relative_path(dest)
+
+def _default_user_voices_payload(default_voice_id: str | None = None) -> dict:
+    return {
+        "meta": {
+            "spec": "vieneu.voice.presets",
+            "spec_version": "1.0",
+            "source": "local_user_saved",
+        },
+        "default_voice": default_voice_id or "",
+        "presets": {},
+    }
+
+def load_user_voices_data(default_voice_id: str | None = None) -> dict:
+    base = _default_user_voices_payload(default_voice_id)
+    if not os.path.exists(USER_VOICES_PATH):
+        return base
+    try:
+        if os.path.getsize(USER_VOICES_PATH) == 0:
+            return base
+        with open(USER_VOICES_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f) or {}
+    except json.JSONDecodeError:
+        backup_path = f"{USER_VOICES_PATH}.corrupt.{int(time.time())}.bak"
+        try:
+            os.replace(USER_VOICES_PATH, backup_path)
+            print(f"   ⚠️ user_voices.json invalid, backed up to: {backup_path}")
+        except Exception:
+            pass
+        return base
+    except Exception:
+        return base
+    if not isinstance(data, dict):
+        return base
+    data.setdefault("meta", base["meta"])
+    data.setdefault("default_voice", default_voice_id or data.get("default_voice", ""))
+    data.setdefault("presets", {})
+    if not isinstance(data["presets"], dict):
+        data["presets"] = {}
+    return data
+
+def load_user_voices_into_tts():
+    if tts is None or not os.path.exists(USER_VOICES_PATH):
+        return
+    try:
+        data = load_user_voices_data()
+        presets = data.get("presets", {})
+        if "v3" in (current_backbone or "").lower():
+            v3_presets = {}
+            for voice_id, voice_data in presets.items():
+                if not isinstance(voice_data, dict):
+                    continue
+                codes = voice_data.get("codes")
+                normalized = dict(voice_data)
+                ref_audio = _resolve_repo_path(normalized.get("ref_audio") or normalized.get("refAudioPath"))
+                has_ref_audio = bool(ref_audio and os.path.exists(ref_audio))
+                if codes:
+                    arr = np.asarray(codes, dtype=np.int64)
+                    if arr.ndim == 1 and arr.size % 16 == 0:
+                        arr = arr.reshape((-1, 16))
+                    if arr.ndim == 2 and arr.shape[1] == 16:
+                        normalized["codes"] = arr.tolist()
+                    elif not has_ref_audio:
+                        print(f"   ⚠️ Skipping legacy/incompatible user voice for v3: {voice_id}")
+                        continue
+                    else:
+                        normalized.pop("codes", None)
+                elif not has_ref_audio:
+                    continue
+                if has_ref_audio:
+                    normalized["ref_audio"] = _repo_relative_path(ref_audio)
+                    normalized.setdefault("type", "ref_audio")
+                    normalized.setdefault("voice_type", "ref_audio")
+                    normalized.setdefault("engine", "vieneu-v3-turbo")
+                normalized.setdefault("description", voice_id)
+                normalized.setdefault("text", "")
+                v3_presets[voice_id] = normalized
+            presets = v3_presets
+        if presets:
+            tts._preset_voices.update(presets)
+            print(f"   ✅ Loaded {len(presets)} user voices")
+    except Exception as e:
+        print(f"   ⚠️ Could not load user voices: {e}")
+
+def save_current_clone_voice(voice_name: str, voice_description: str, custom_audio, custom_text: str):
+    global PRESET_VOICES_CACHE
+    if not model_loaded or tts is None:
+        return gr.update(), "⚠️ Vui lòng tải model trước khi lưu voice."
+    if custom_audio is None:
+        return gr.update(), "⚠️ Vui lòng upload audio giọng mẫu trước."
+    if not voice_name or not voice_name.strip():
+        return gr.update(), "⚠️ Vui lòng nhập tên voice cần lưu."
+    try:
+        voice_label = voice_name.strip()
+        voice_id = _safe_voice_id(voice_label)
+        existing = set(getattr(tts, "_preset_voices", {}).keys())
+        base_voice_id = voice_id
+        idx = 2
+        while voice_id in existing:
+            voice_id = f"{base_voice_id}_{idx}"
+            idx += 1
+        ref_codes = tts.encode_reference(custom_audio)
+        ref_audio_path = _persist_user_ref_audio(voice_id, custom_audio)
+        voice_entry = {
+            "description": voice_description.strip() or voice_label,
+            "text": (custom_text or "").strip(),
+            "codes": _voice_codes_to_list(ref_codes),
+            "ref_audio": ref_audio_path,
+            "type": "ref_audio",
+            "voice_type": "ref_audio",
+            "engine": "vieneu-v3-turbo" if "v3" in (current_backbone or "").lower() else "legacy",
+            "source": "user_saved",
+            "podcast": True,
+        }
+        data = load_user_voices_data(default_voice_id=voice_id)
+        data.setdefault("presets", {})[voice_id] = voice_entry
+        if not data.get("default_voice"):
+            data["default_voice"] = voice_id
+        with open(USER_VOICES_PATH, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        tts._preset_voices[voice_id] = voice_entry
+        voices = tts.list_preset_voices()
+        PRESET_VOICES_CACHE = voices
+        return gr.update(choices=voices, value=voice_id, interactive=True), f"✅ Đã lưu voice '{voice_id}' vào hệ thống."
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return gr.update(), f"❌ Lỗi lưu voice: {e}"
+
+def delete_saved_user_voice(voice_choice: str, confirmed: bool):
+    global PRESET_VOICES_CACHE, CONV_VOICES_CACHE
+    slot_no_updates = [gr.update()] * MAX_SPEAKERS
+    if not confirmed:
+        return (gr.update(), "⚠️ Hãy tick xác nhận trước khi xóa voice.", gr.update(value=False), *slot_no_updates)
+    if not voice_choice:
+        return (gr.update(), "⚠️ Vui lòng chọn voice cần xóa.", gr.update(value=False), *slot_no_updates)
+
+    voice_id = resolve_voice_id(voice_choice)
+    data = load_user_voices_data()
+    presets = data.get("presets", {})
+    if voice_id not in presets:
+        return (
+            gr.update(),
+            "⚠️ Chỉ có thể xóa voice bạn đã lưu. Voice mẫu/built-in sẽ được giữ nguyên.",
+            gr.update(value=False),
+            *slot_no_updates,
+        )
+
+    voice_entry = presets.pop(voice_id) or {}
+    ref_audio = _resolve_repo_path(voice_entry.get("ref_audio") or voice_entry.get("refAudioPath"))
+
+    remaining_refs = set()
+    for entry in presets.values():
+        if not isinstance(entry, dict):
+            continue
+        path = _resolve_repo_path(entry.get("ref_audio") or entry.get("refAudioPath"))
+        if path:
+            remaining_refs.add(os.path.abspath(path))
+
+    if data.get("default_voice") == voice_id:
+        data["default_voice"] = next(iter(presets), "")
+
+    try:
+        with open(USER_VOICES_PATH, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+
+        if tts is not None and hasattr(tts, "_preset_voices"):
+            tts._preset_voices.pop(voice_id, None)
+
+        ref_root = os.path.abspath(USER_VOICE_REFS_DIR)
+        if ref_audio:
+            ref_abs = os.path.abspath(ref_audio)
+            if ref_abs.startswith(ref_root + os.sep) and ref_abs not in remaining_refs and os.path.exists(ref_abs):
+                try:
+                    os.remove(ref_abs)
+                except OSError as cleanup_error:
+                    print(f"   Could not remove user voice ref audio '{ref_abs}': {cleanup_error}")
+
+        voices = tts.list_preset_voices() if tts is not None else []
+        PRESET_VOICES_CACHE = voices
+
+        def _check_podcast(v_id):
+            if tts is None:
+                return True
+            val = getattr(tts, "_preset_voices", {}).get(v_id, {}).get("podcast", True)
+            if isinstance(val, str):
+                return val.strip().lower() == "true"
+            return bool(val)
+
+        CONV_VOICES_CACHE = [v for v in voices if _check_podcast(v[1] if isinstance(v, (list, tuple)) else v)]
+        next_value = data.get("default_voice") or None
+        slot_update = gr.update(choices=CONV_VOICES_CACHE, value=None)
+        return (
+            gr.update(choices=voices, value=next_value, interactive=bool(voices)),
+            f"✅ Đã xóa voice '{voice_id}'.",
+            gr.update(value=False),
+            *([slot_update] * MAX_SPEAKERS),
+        )
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return (gr.update(), f"❌ Lỗi xóa voice: {e}", gr.update(value=False), *slot_no_updates)
 
 def get_available_devices() -> list[str]:
     """Get list of available devices for current platform."""
@@ -207,8 +471,8 @@ def restore_ui_state():
 
 def should_use_lmdeploy(backbone_choice: str, device_choice: str) -> bool:
     """Determine if we should use LMDeploy backend."""
-    # LMDeploy not supported on macOS
-    if sys.platform == "darwin":
+    # LMDeploy not supported on macOS or when the optional package is absent.
+    if sys.platform == "darwin" or not has_lmdeploy():
         return False
 
     # GGUF, v2-Turbo và v3 Turbo đều KHÔNG dùng LMDeploy (v3 là PyTorch, có engine riêng).
@@ -232,12 +496,45 @@ def load_model(backbone_choice: str, codec_choice: str, device_choice: str,
                force_lmdeploy: bool, custom_model_id: str = "", custom_base_model: str = "", 
                custom_hf_token: str = ""):
     """Load model with optimizations and max batch size control"""
-    global tts, current_backbone, current_codec, model_loaded, using_lmdeploy
+    global tts, current_backbone, current_codec, current_model_key, model_loaded, using_lmdeploy
     lmdeploy_error_reason = None
-    model_loaded = False # Ensure we don't try to use a half-loaded model
     
     # Helper for slot updates (initially no change)
     slot_no_updates = [gr.update()] * MAX_SPEAKERS
+    request_model_key = (
+        backbone_choice,
+        codec_choice,
+        device_choice,
+        bool(force_lmdeploy and should_use_lmdeploy(backbone_choice, device_choice)),
+        (custom_model_id or "").strip(),
+        (custom_base_model or "").strip(),
+    )
+    if model_loaded and tts is not None and current_model_key == request_model_key:
+        try:
+            voices = tts.list_preset_voices()
+        except Exception:
+            voices = []
+        if voices:
+            is_tuple = isinstance(voices[0], tuple)
+            voice_values = [v[1] for v in voices] if is_tuple else voices
+            default_v = getattr(tts, "_default_voice", None) or (voice_values[0] if voice_values else None)
+            voice_update = gr.update(choices=voices, value=default_v, interactive=True)
+        else:
+            voice_update = gr.update()
+        yield (
+            get_model_status_message() + "\n\n? Model ?ang ? trong RAM, kh?ng t?i l?i.",
+            gr.update(interactive=True),
+            gr.update(interactive=True),
+            gr.update(interactive=True),
+            gr.update(interactive=False),
+            voice_update,
+            gr.update(), gr.update(), gr.update(), gr.update(),
+            gr.update(),
+            *slot_no_updates
+        )
+        return
+
+    model_loaded = False # Ensure we don't try to use a half-loaded model
 
     yield (
         "⏳ Đang tải model với tối ưu hóa... Lưu ý: Quá trình này sẽ tốn thời gian. Vui lòng kiên nhẫn.",
@@ -612,6 +909,7 @@ def load_model(backbone_choice: str, codec_choice: str, device_choice: str,
         
         current_backbone = backbone_choice
         current_codec = codec_choice
+        current_model_key = request_model_key
         model_loaded = True
         
         # Success message with optimization info
@@ -643,6 +941,8 @@ def load_model(backbone_choice: str, codec_choice: str, device_choice: str,
         success_msg = get_model_status_message()
         if warning_msg:
             success_msg += warning_msg
+
+        load_user_voices_into_tts()
             
         # Prepare voice update
         try:
@@ -1722,7 +2022,7 @@ with gr.Blocks(theme=theme, css=css, title="VieNeu-TTS", head=head_html) as demo
                     default_temp = 0.7
                     default_text = DEFAULT_TEXT_GPU
                 else:
-                    default_codec = "NeuCodec (Distill)" if "NeuCodec (Distill)" in CODEC_CONFIGS else list(CODEC_CONFIGS.keys())[0]
+                    default_codec = "NeuCodec (ONNX)" if "NeuCodec (ONNX)" in CODEC_CONFIGS else list(CODEC_CONFIGS.keys())[0]
                     default_temp = 0.7
                     default_text = DEFAULT_TEXT_GPU
 
@@ -1737,7 +2037,9 @@ with gr.Blocks(theme=theme, css=css, title="VieNeu-TTS", head=head_html) as demo
                     label="🎵 Codec",
                     interactive=False
                 )
-                device_choice = gr.Radio(get_available_devices(), value="Auto", label="🖥️ Device")
+                device_choices = get_available_devices()
+                default_device = "CUDA" if "CUDA" in device_choices else "Auto"
+                device_choice = gr.Radio(device_choices, value=default_device, label="🖥️ Device")
             
             with gr.Row(visible=False) as custom_model_group:
                 custom_backbone_model_id = gr.Textbox(
@@ -1828,6 +2130,11 @@ with gr.Blocks(theme=theme, css=css, title="VieNeu-TTS", head=head_html) as demo
                             with gr.TabItem("👤 Preset", id="preset_mode") as tab_preset:
                                 voice_select = gr.Dropdown(choices=[], value=None, label="Giọng mẫu", allow_custom_value=True)
                             
+                                delete_voice_confirm = gr.Checkbox(value=False, label="Tôi chắc chắn muốn xóa voice đang chọn")
+                                with gr.Row():
+                                    btn_delete_voice = gr.Button("Xóa voice đang chọn", variant="secondary", size="sm")
+                                delete_voice_status = gr.Markdown("")
+
                             # Voice cloning is only available on v3+ models. Hidden by
                             # default and toggled on by on_backbone_change when a v3
                             # model is selected.
@@ -1837,11 +2144,30 @@ with gr.Blocks(theme=theme, css=css, title="VieNeu-TTS", head=head_html) as demo
                                     "Các phiên bản v1/v2 không hỗ trợ clone — hãy dùng giọng mẫu ở tab **Preset**."
                                 )
                                 with gr.Group(visible=True) as cloning_elements_group:
-                                    custom_audio = gr.Audio(label="Audio giọng mẫu (3-5 giây) (.wav)", type="filepath")
+                                    custom_audio = gr.Audio(
+                                        label="Audio giọng mẫu (3-5 giây) (.wav)",
+                                        type="filepath",
+                                        value=os.path.join(os.path.dirname(os.path.dirname(__file__)), "examples", "audio_ref", "example_ngoc_huyen.wav"),
+                                    )
                                     cloning_warning_msg = gr.Markdown(visible=False, elem_id="cloning-warning")
                                     # v3 clones from audio only — the reference transcript box
                                     # is hidden for v3 (toggled by on_backbone_change).
-                                    custom_text = gr.Textbox(label="Nội dung audio mẫu - vui lòng gõ đúng nội dung của audio mẫu - kể cả dấu câu vì model rất nhạy cảm với dấu câu (.,?!)", visible=False)
+                                    custom_text = gr.Textbox(
+                                        label="Nội dung audio mẫu - vui lòng gõ đúng nội dung của audio mẫu - kể cả dấu câu vì model rất nhạy cảm với dấu câu (.,?!)",
+                                        value="Tác phẩm dự thi bảo đảm tính khoa học, tính đảng, tính chiến đấu, tính định hướng.",
+                                        visible=False,
+                                    )
+                                    with gr.Accordion("💾 Lưu voice sau khi nghe thử", open=False):
+                                        saved_voice_name = gr.Textbox(
+                                            label="Tên voice",
+                                            placeholder="Ví dụ: Thời sự nữ"
+                                        )
+                                        saved_voice_desc = gr.Textbox(
+                                            label="Mô tả voice",
+                                            placeholder="Ví dụ: Giọng nữ thời sự"
+                                        )
+                                        btn_save_voice = gr.Button("➕ Thêm voice vào hệ thống", variant="secondary")
+                                        save_voice_status = gr.Markdown("")
                                     gr.Examples(
                                         examples=[
                                             [os.path.join(os.path.dirname(os.path.dirname(__file__)), "examples", "audio_ref", "example.wav"), "Ví dụ 2. Tính trung bình của dãy số."],
@@ -2000,6 +2326,18 @@ with gr.Blocks(theme=theme, css=css, title="VieNeu-TTS", head=head_html) as demo
         # Bind tab events to update state
         tab_preset.select(lambda: "preset_mode", outputs=current_mode_state)
         tab_custom.select(lambda: "custom_mode", outputs=current_mode_state)
+
+        btn_save_voice.click(
+            fn=save_current_clone_voice,
+            inputs=[saved_voice_name, saved_voice_desc, custom_audio, custom_text],
+            outputs=[voice_select, save_voice_status]
+        )
+
+        btn_delete_voice.click(
+            fn=delete_saved_user_voice,
+            inputs=[voice_select, delete_voice_confirm],
+            outputs=[voice_select, delete_voice_status, delete_voice_confirm, *speaker_voice_dds]
+        )
         
         custom_audio.change(validate_audio_duration, inputs=[custom_audio], outputs=[cloning_warning_msg])
         
@@ -2016,7 +2354,7 @@ with gr.Blocks(theme=theme, css=css, title="VieNeu-TTS", head=head_html) as demo
             
             if is_hw_accel_supported:
                 dev_choices = get_available_devices()
-                initial_dev = "Auto"
+                initial_dev = "CUDA" if is_v3 and "CUDA" in dev_choices else "Auto"
             else:
                 dev_choices = ["CPU"]
                 initial_dev = "CPU"
@@ -2036,7 +2374,7 @@ with gr.Blocks(theme=theme, css=css, title="VieNeu-TTS", head=head_html) as demo
                 text_update = gr.update(value=DEFAULT_TEXT_GPU)
                 temp_update = gr.update(value=0.7)
             else:
-                codec_update = gr.update(value="NeuCodec (Distill)", interactive=False)
+                codec_update = gr.update(value="NeuCodec (ONNX)" if "NeuCodec (ONNX)" in CODEC_CONFIGS else list(CODEC_CONFIGS.keys())[0], interactive=False)
                 text_update = gr.update(value=DEFAULT_TEXT_GPU)
                 temp_update = gr.update(value=0.7)
                 

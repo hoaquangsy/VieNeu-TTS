@@ -27,8 +27,10 @@ class VieNeuTTS(BaseVieneuTTS):
         hf_token: Optional[str] = None,
         gguf_filename: Optional[str] = "VieNeu-TTS-v2-Q4-K-M.gguf",
         emotion: str = "natural",
+        cpu_threads: Optional[int] = None,
     ):
         super().__init__()
+        self.cpu_threads = cpu_threads
 
         # Streaming configuration
         self.streaming_overlap_frames = 1
@@ -104,6 +106,10 @@ class VieNeuTTS(BaseVieneuTTS):
                 raise ImportError(
                     "Failed to import `llama_cpp`. Please install llama-cpp-python version >= 0.3.16."
                 ) from e
+            llama_kwargs = {}
+            if self.cpu_threads:
+                llama_kwargs["n_threads"] = int(self.cpu_threads)
+                llama_kwargs["n_threads_batch"] = int(self.cpu_threads)
             self.backbone = Llama.from_pretrained(
                 repo_id=backbone_repo,
                 filename=gguf_filename or "*.gguf",
@@ -114,6 +120,7 @@ class VieNeuTTS(BaseVieneuTTS):
                 mlock=True,
                 flash_attn=True if backbone_device in ("gpu", "cuda") else False,
                 token=hf_token,
+                **llama_kwargs,
             )
             self._is_quantized_model = True
         else:

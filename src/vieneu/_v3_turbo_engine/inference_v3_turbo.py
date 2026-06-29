@@ -93,7 +93,7 @@ class VieNeuTTSv3Turbo:
 
     SAMPLE_RATE = 48000
 
-    def __init__(self, checkpoint_path: str='pnnbao-ump/VieNeu-TTS-v3-Turbo', tokenizer_path: Optional[str]=None, moss_tokenizer_path: str='OpenMOSS-Team/MOSS-Audio-Tokenizer-Nano', device: str='auto', dtype: str='auto', compile_acoustic: bool=False):
+    def __init__(self, checkpoint_path: str='pnnbao-ump/VieNeu-TTS-v3-Turbo', tokenizer_path: Optional[str]=None, moss_tokenizer_path: str='OpenMOSS-Team/MOSS-Audio-Tokenizer-Nano', device: str='auto', dtype: str='auto', compile_acoustic: bool=False, hf_token: Optional[str]=None):
         """Load the v3 Turbo checkpoint and the MOSS audio codec.
 
         Args:
@@ -107,13 +107,14 @@ class VieNeuTTSv3Turbo:
         self._lock = threading.RLock()
         self.device = self._resolve_device(device)
         self.dtype = self._resolve_dtype(dtype)
+        hf_token = (str(hf_token).strip() if hf_token is not None else "") or None
         from transformers import AutoTokenizer
         tok_path = tokenizer_path or checkpoint_path
-        self.tokenizer = AutoTokenizer.from_pretrained(tok_path, trust_remote_code=True)
-        self.config = VieNeuV3TurboConfig.from_pretrained(checkpoint_path)
-        self.model = load_v3_turbo_checkpoint(checkpoint_path, device=self.device, dtype=self.dtype).eval()
+        self.tokenizer = AutoTokenizer.from_pretrained(tok_path, trust_remote_code=True, token=hf_token)
+        self.config = VieNeuV3TurboConfig.from_pretrained(checkpoint_path, token=hf_token)
+        self.model = load_v3_turbo_checkpoint(checkpoint_path, token=hf_token, device=self.device, dtype=self.dtype).eval()
         from transformers import AutoModel
-        self.audio_tokenizer = AutoModel.from_pretrained(moss_tokenizer_path, trust_remote_code=True).to(self.device).eval()
+        self.audio_tokenizer = AutoModel.from_pretrained(moss_tokenizer_path, trust_remote_code=True, token=hf_token).to(self.device).eval()
         self.default_emotion = '<|emotion_0|>'
         if compile_acoustic:
             # Compile the acoustic decoder's cached step (the inner-loop hot path).
@@ -312,11 +313,24 @@ class VieNeuTTSv3Turbo:
         to clone that voice. Encoding once and reusing the codes keeps the voice
         identical across calls and skips re-encoding the same clip.
         """
-        import torchaudio
-        wav_t, sr = torchaudio.load(ref_audio_path)
+        import soundfile as sf
+        wav_np, sr = sf.read(str(ref_audio_path), dtype="float32", always_2d=True)
+        wav_np = wav_np.T
         if sr != self.SAMPLE_RATE:
-            wav_t = torchaudio.functional.resample(wav_t, sr, self.SAMPLE_RATE)
+            try:
+                import soxr
+                wav_np = np.stack([
+                    soxr.resample(wav_np[ch], sr, self.SAMPLE_RATE)
+                    for ch in range(wav_np.shape[0])
+                ])
+            except Exception:
+                import torchaudio
+                wav_t_tmp = torch.from_numpy(wav_np)
+                wav_np = torchaudio.functional.resample(
+                    wav_t_tmp, sr, self.SAMPLE_RATE
+                ).numpy()
         n_ch = int(getattr(self.audio_tokenizer.config, 'number_channels', 2))
+        wav_t = torch.from_numpy(wav_np)
         if wav_t.shape[0] == 1:
             wav_t = wav_t.repeat(n_ch, 1)
         else:

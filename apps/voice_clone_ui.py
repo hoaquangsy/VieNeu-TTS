@@ -31,6 +31,10 @@ from vieneu import Vieneu
 OUTPUT_DIR = ROOT_DIR / "outputs"
 OUTPUT_DIR.mkdir(exist_ok=True)
 LOG_PATH = ROOT_DIR / "voice_clone_ui.log"
+DEFAULT_REF_AUDIO = ROOT_DIR / "examples" / "audio_ref" / "example_ngoc_huyen.wav"
+DEFAULT_MODEL_LABEL = "VieNeu v3 Turbo GPU"
+DEFAULT_MODE = "v3_turbo_gpu"
+DEFAULT_DEVICE = "cuda"
 
 _TTS: Any | None = None
 _TTS_KEY: tuple[str, str, str, str] | None = None
@@ -41,9 +45,16 @@ def _log(message: str) -> None:
     print(line, flush=True)
 
 
+def _normalize_mode(mode: str) -> str:
+    value = (mode or DEFAULT_MODE).strip()
+    if value in {"v3_turbo_gpu", "v3turbo_gpu", "v3-turbo-gpu"}:
+        return "v3turbo"
+    return value
+
 def _get_tts(mode: str, device: str, backbone_device: str, codec_device: str) -> Any:
     global _TTS, _TTS_KEY
 
+    mode = _normalize_mode(mode)
     key = (mode, device, backbone_device, codec_device)
     if _TTS is not None and _TTS_KEY == key:
         _log(f"Reusing loaded model: {mode}")
@@ -56,7 +67,9 @@ def _get_tts(mode: str, device: str, backbone_device: str, codec_device: str) ->
             close()
 
     _log(f"Loading model: mode={mode}, device={device}")
-    if mode == "standard":
+    if mode == "v3turbo":
+        _TTS = Vieneu(mode="v3turbo", device=device or DEFAULT_DEVICE, dtype="auto")
+    elif mode == "standard":
         _TTS = Vieneu(
             mode="standard",
             backbone_device=backbone_device,
@@ -89,23 +102,29 @@ def clone_voice(
 ) -> tuple[str | None, str]:
     started = time.time()
 
-    if not ref_audio:
-        raise gr.Error("Hay tai len file audio mau.")
+    ref_audio = ref_audio or str(DEFAULT_REF_AUDIO)
+    mode = mode or DEFAULT_MODE
+    normalized_mode = _normalize_mode(mode)
+    if not Path(ref_audio).exists():
+        raise gr.Error(f"Khong tim thay ref audio: {ref_audio}. Voice UI default la v3; khong fallback sang v2.")
     if not text or not text.strip():
         raise gr.Error("Hay nhap noi dung can doc.")
-    if mode == "standard" and not ref_text.strip():
+    if normalized_mode == "standard" and not ref_text.strip():
         raise gr.Error("Standard mode can transcript cua audio mau.")
 
     text = text.strip()
-    if mode != "standard" and len(text) <= 140:
+    if normalized_mode != "standard" and len(text) <= 140:
         max_tokens = min(int(max_tokens), 384)
 
-    _log(f"Request started: mode={mode}, text_chars={len(text)}, max_tokens={max_tokens}")
-    tts = _get_tts(mode, device, backbone_device, codec_device)
+    _log(f"Request started: mode={mode}, text_chars={len(text)}, max_tokens={max_tokens}, ref_audio={ref_audio}")
+    tts = _get_tts(normalized_mode, device or DEFAULT_DEVICE, backbone_device, codec_device)
 
-    if mode == "standard":
+    if normalized_mode == "standard":
         _log("Encoding standard reference audio")
         voice = {"codes": tts.encode_reference(ref_audio), "text": ref_text.strip()}
+    elif normalized_mode == "v3turbo":
+        _log("Encoding v3 Turbo reference audio")
+        voice = {"codes": tts.encode_reference(ref_audio)}
     else:
         _log("Encoding turbo reference audio")
         voice = tts.encode_reference(ref_audio)
@@ -119,7 +138,7 @@ def clone_voice(
         "max_chars": int(max_chars),
         "apply_watermark": not disable_watermark,
     }
-    if mode != "standard":
+    if normalized_mode != "standard":
         infer_kwargs["max_tokens"] = int(max_tokens)
 
     _log("Synthesizing audio")
@@ -139,10 +158,24 @@ def clone_voice(
     output_path = OUTPUT_DIR / f"ui_clone_{uuid4().hex[:10]}.wav"
     tts.save(audio, output_path)
     elapsed = time.time() - started
-    return str(output_path), f"Da tao xong: {output_path.name} ({elapsed:.1f}s)"
+    status = (
+        f"Da tao xong: {output_path.name} ({elapsed:.1f}s)\n"
+        f"Engine: {DEFAULT_MODEL_LABEL}\n"
+        f"Mode: {mode}\n"
+        f"Device: {device or DEFAULT_DEVICE}\n"
+        f"Ref audio: {ref_audio}\n"
+        "Fallback v2: disabled"
+    )
+    return str(output_path), status
 
 
 def list_voices(mode: str, device: str, backbone_device: str, codec_device: str) -> str:
+    if _normalize_mode(mode) == "v3turbo":
+        return (
+            "chill: chill - Ngoc Huyen\n"
+            f"type: ref_audio\nrefAudioPath: {DEFAULT_REF_AUDIO}\n"
+            "engine: VieNeu v3 Turbo GPU"
+        )
     tts = _get_tts(mode, device, backbone_device, codec_device)
     voices = tts.list_preset_voices()
     if not voices:
@@ -157,22 +190,36 @@ def build_ui() -> gr.Blocks:
     """
 
     with gr.Blocks(title="VieNeu-TTS Voice Clone", css=css) as demo:
-        gr.Markdown("# VieNeu-TTS Voice Clone")
+        gr.Markdown(
+            "# VieNeu Voice\n"
+            "Engine: VieNeu v3 Turbo GPU  \n"
+            "Voice: chill - Ngoc Huyen  \n"
+            f"Default ref audio: {DEFAULT_REF_AUDIO.name}  \n"
+            "Voice type: v3 ref audio"
+        )
 
         with gr.Row(equal_height=False):
             with gr.Column(scale=1):
                 ref_audio = gr.Audio(
-                    label="Audio mau",
+                    label="Default ref audio: example_ngoc_huyen.wav",
                     sources=["upload", "microphone"],
                     type="filepath",
+                    value=str(DEFAULT_REF_AUDIO) if DEFAULT_REF_AUDIO.exists() else None,
                 )
                 text = gr.Textbox(
                     label="Noi dung can doc",
                     lines=7,
-                    value="Xin chao, day la giong noi duoc clone bang VieNeu TTS.",
+                    value=(
+                        "Có một cảm giác rất lạ đang lan ra.\n"
+                        "Nếu hôm nay bạn chưa dùng công cụ này, ngày mai bạn có thể đã chậm hơn người khác một nhịp.\n"
+                        "Nghe thì đơn giản.\n"
+                        "Nó chỉ giống như thêm một công cụ vào công việc.\n"
+                        "Rồi vào lớp học.\n"
+                        "Rồi vào cả thủ tục hành chính."
+                    ),
                 )
                 ref_text = gr.Textbox(
-                    label="Transcript audio mau (chi can cho Standard mode)",
+                    label="Transcript audio mau (legacy Standard v2 only)",
                     lines=3,
                 )
                 generate = gr.Button("Tao giong clone", variant="primary")
@@ -183,24 +230,24 @@ def build_ui() -> gr.Blocks:
                 with gr.Accordion("Cai dat", open=False):
                     mode = gr.Radio(
                         label="Mode",
-                        choices=["turbo", "standard", "turbo_gpu"],
-                        value="turbo",
+                        choices=["v3_turbo_gpu", "turbo", "standard", "turbo_gpu"],
+                        value=DEFAULT_MODE,
                     )
                     with gr.Row():
                         device = gr.Dropdown(
-                            label="Turbo device",
+                            label="Device",
                             choices=["cpu", "cuda"],
-                            value="cpu",
+                            value=DEFAULT_DEVICE,
                         )
                         backbone_device = gr.Dropdown(
-                            label="Standard backbone",
+                            label="Legacy v2 backbone",
                             choices=["cpu", "cuda"],
-                            value="cpu",
+                            value=DEFAULT_DEVICE,
                         )
                         codec_device = gr.Dropdown(
-                            label="Standard codec",
+                            label="Legacy v2 codec",
                             choices=["cpu", "cuda"],
-                            value="cpu",
+                            value=DEFAULT_DEVICE,
                         )
                     temperature = gr.Slider(
                         label="Temperature",

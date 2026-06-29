@@ -15,7 +15,8 @@ def _apply_dtype(model: VieNeuV3TurboForTTS, device: torch.device, dtype: torch.
         return model.to(dtype=torch.bfloat16)
     return model
 
-def load_v3_turbo_checkpoint(path_or_repo: str, *, token: Optional[Union[str, bool]]=True, device: Optional[torch.device]=None, dtype: Optional[torch.dtype]=None) -> VieNeuV3TurboForTTS:
+def load_v3_turbo_checkpoint(path_or_repo: str, *, token: Optional[Union[str, bool]]=None, device: Optional[torch.device]=None, dtype: Optional[torch.dtype]=None) -> VieNeuV3TurboForTTS:
+    token = (str(token).strip() if isinstance(token, str) else token) or None
     if device is None:
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     if dtype is None:
@@ -32,7 +33,8 @@ def load_v3_turbo_checkpoint(path_or_repo: str, *, token: Optional[Union[str, bo
         return model
     return load_v3_turbo_from_hub(path_or_repo, token=token, device=device, dtype=dtype)
 
-def load_v3_turbo_from_hub(repo_id: str, *, token: Optional[Union[str, bool]]=True, device: Optional[torch.device]=None, dtype: Optional[torch.dtype]=None) -> VieNeuV3TurboForTTS:
+def load_v3_turbo_from_hub(repo_id: str, *, token: Optional[Union[str, bool]]=None, device: Optional[torch.device]=None, dtype: Optional[torch.dtype]=None) -> VieNeuV3TurboForTTS:
+    token = (str(token).strip() if isinstance(token, str) else token) or None
     if device is None:
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     if dtype is None:
