@@ -23,6 +23,9 @@ import uuid
 import json
 import re
 import shutil
+import socket
+import subprocess
+import urllib.request
 from vieneu_utils.core_utils import split_text_into_chunks, join_audio_chunks, env_bool, get_silence_duration_v2
 from vieneu_utils.phonemize_text import phonemize_to_chunks
 from sea_g2p import Normalizer
@@ -74,6 +77,86 @@ def has_lmdeploy() -> bool:
         return importlib.util.find_spec("lmdeploy") is not None
     except Exception:
         return False
+
+def _get_lan_ip() -> str:
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.connect(("8.8.8.8", 80))
+            return sock.getsockname()[0]
+    except Exception:
+        try:
+            return socket.gethostbyname(socket.gethostname())
+        except Exception:
+            return "127.0.0.1"
+
+def _api_health_ok(url: str, timeout: float = 2.0) -> bool:
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as response:
+            return response.status == 200
+    except Exception:
+        return False
+
+def start_lan_voice_api() -> str:
+    global _lan_api_process
+    port = int(os.getenv("VIENEU_VOICE_API_PORT", "8002"))
+    lan_ip = _get_lan_ip()
+    local_health = f"http://127.0.0.1:{port}/health"
+    lan_health = f"http://{lan_ip}:{port}/health"
+    lan_base = f"http://{lan_ip}:{port}"
+
+    if _api_health_ok(local_health):
+        return (
+            f"✅ Voice API LAN đang bật.  \n"
+            f"Base URL cho laptop: `{lan_base}`  \n"
+            f"Health: `{lan_health}`"
+        )
+
+    if _lan_api_process is not None and _lan_api_process.poll() is None:
+        return "⏳ Voice API LAN đang khởi động, thử lại sau vài giây."
+
+    root_dir = os.path.dirname(os.path.dirname(__file__))
+    cmd = [
+        sys.executable,
+        "-m",
+        "uvicorn",
+        "apps.voice_clone_api:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        str(port),
+    ]
+    try:
+        kwargs = {
+            "cwd": root_dir,
+            "stdout": subprocess.DEVNULL,
+            "stderr": subprocess.DEVNULL,
+        }
+        if sys.platform == "win32":
+            kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            kwargs["startupinfo"] = startupinfo
+        _lan_api_process = subprocess.Popen(cmd, **kwargs)
+    except Exception as exc:
+        return f"❌ Không bật được Voice API LAN: `{exc}`"
+
+    deadline = time.time() + 25
+    while time.time() < deadline:
+        if _api_health_ok(local_health):
+            return (
+                f"✅ Đã bật Voice API LAN.  \n"
+                f"Base URL cho laptop: `{lan_base}`  \n"
+                f"Health: `{lan_health}`  \n"
+                "Nếu laptop chưa gọi được, kiểm tra Windows Firewall cho TCP port 8002."
+            )
+        if _lan_api_process.poll() is not None:
+            return "❌ Voice API LAN vừa thoát khi khởi động. Port 8002 có thể đang bị app khác chiếm."
+        time.sleep(1)
+
+    return (
+        f"⏳ Đã gửi lệnh bật Voice API LAN nhưng chưa thấy /health phản hồi.  \n"
+        f"Thử lại: `{lan_health}`"
+    )
 
 filtered_backbones = {}
 
@@ -136,6 +219,7 @@ current_codec = None
 model_loaded = False
 using_lmdeploy = False
 current_model_key = None
+_lan_api_process = None
 PRESET_VOICES_CACHE = []  # List of all voices (tuples or strings)
 CONV_VOICES_CACHE = []    # Filtered list for conversation (podcast=True)
 MAX_SPEAKERS = 8          # Max concurrent speakers in conversation tab
@@ -1998,6 +2082,13 @@ with gr.Blocks(theme=theme, css=css, title="VieNeu-TTS", head=head_html) as demo
     </div>
 </div>
         """)
+
+        with gr.Row():
+            btn_lan_api = gr.Button("Bật LAN", variant="secondary", size="sm", scale=0)
+            lan_api_status = gr.Markdown(
+                "Voice API LAN: chưa bật. Bấm **Bật LAN** để laptop cùng Wi-Fi gọi được API.",
+                elem_id="lan-api-status",
+            )
         
         # --- CONFIGURATION ---
         with gr.Group():
@@ -2317,6 +2408,12 @@ with gr.Blocks(theme=theme, css=css, title="VieNeu-TTS", head=head_html) as demo
                     )
                 gr.Markdown("<div style='text-align: center; color: #64748b; font-size: 0.8rem;'>🔒 Audio được đóng dấu bản quyền ẩn (Watermarker) để bảo mật và định danh AI.</div>")
         
+        btn_lan_api.click(
+            fn=start_lan_voice_api,
+            inputs=[],
+            outputs=lan_api_status,
+        )
+
         codec_select.change(
             on_codec_change, 
             inputs=[codec_select, current_mode_state], 
